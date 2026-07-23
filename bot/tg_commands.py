@@ -26,13 +26,15 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # bot/
-from paper_bot import (  # noqa: E402
-    load_state, signal_detail, compute_rebalance, classify, equity,
-    TRADES, SIGNAL_LABELS, THRESHOLD,
-)
+BOT_DIR = Path(__file__).resolve().parent
+STATUS_FILE = BOT_DIR / "status.json"     # snapshot written by the daily paper bot
+TRADES_FILE = BOT_DIR / "trades.csv"
+OFFSET_FILE = BOT_DIR / "tg_offset.json"
+THRESHOLD = 0.5
 
-OFFSET_FILE = Path(__file__).resolve().parent / "tg_offset.json"
+# NOTE: this handler does NOT fetch market data (Binance is geo-blocked on CI
+# runners). It only READS status.json / trades.csv committed by the daily bot,
+# so replies are instant and never hit a rate limit or geo-block.
 HELP = (
     "🤖 Trend Ensemble paper bot — commands:\n"
     "/portfolio (or /status) — equity, cash, BTC, exposure, return + live signal\n"
@@ -42,46 +44,53 @@ HELP = (
 )
 
 
-# ---- Reply builders -------------------------------------------------------- #
+# ---- Reply builders (read the committed snapshot, no network) -------------- #
+def _load_status() -> dict | None:
+    if STATUS_FILE.exists():
+        try:
+            return json.loads(STATUS_FILE.read_text())
+        except Exception:
+            return None
+    return None
+
+
 def reply_portfolio() -> str:
-    s = load_state()
-    sig = signal_detail()
-    plan = compute_rebalance(s, sig["price"], sig["target"])
-    action, _ = classify(s, plan, sig["target"])
-    eq = equity(s, sig["price"])
-    btc_val = s["btc"] * sig["price"]
-    expo = (btc_val / eq * 100) if eq else 0.0
-    ret = (eq / s["initial_capital"] - 1) * 100
+    r = _load_status()
+    if not r:
+        return ("📊 No snapshot yet — the daily bot hasn't run in the cloud.\n"
+                "It'll appear after the first paper-bot-daily run (or trigger it manually).")
     return (
         "📊 PORTFOLIO\n"
-        f"Equity   : ${eq:,.2f}  ({ret:+.2f}%)\n"
-        f"Cash     : ${s['cash']:,.2f}\n"
-        f"BTC      : {s['btc']:.6f}  (${btc_val:,.2f})\n"
-        f"Exposure : {expo:.1f}%\n"
-        f"BTC price: ${sig['price']:,.2f}\n"
+        f"Equity   : ${r['total_equity_usd']:,.2f}  ({r['total_return_pct']:+.2f}%)\n"
+        f"Cash     : ${r['cash_usd']:,.2f}\n"
+        f"BTC      : {r['btc_units']:.6f}  (${r['btc_value_usd']:,.2f})\n"
+        f"Exposure : {r['current_exposure_pct']:.1f}%\n"
+        f"BTC price: ${r['btc_price']:,.2f}\n"
         "\n"
-        f"Signal   : {action}  ({sig['votes_up']}/7 = {sig['agreement']:.2f}, gate {THRESHOLD})\n"
-        f"Target   : {sig['target']*100:.0f}% exposure\n"
-        f"As of closed bar {sig['bar_time'].date()}"
+        f"Signal   : {r['action']}  ({r['agreement']}, gate {THRESHOLD})\n"
+        f"Target   : {r['new_target_exposure_pct']:.0f}% exposure\n"
+        f"As of closed bar {r['closed_bar_date']}"
     )
 
 
 def reply_signal() -> str:
-    sig = signal_detail()
+    r = _load_status()
+    if not r:
+        return "📶 No snapshot yet — run the daily bot first."
     lines = ["📶 SIGNAL — 7 trend votes"]
-    for k, label in SIGNAL_LABELS.items():
-        lines.append(f"{'✅' if sig['votes'][k] else '❌'} {label}")
-    lines.append(f"→ {sig['votes_up']}/7 = {sig['agreement']:.2f}  (gate {THRESHOLD})")
-    lines.append(f"Target exposure: {sig['target']*100:.0f}%")
-    lines.append(f"BTC ${sig['price']:,.2f} · bar {sig['bar_time'].date()}")
+    for label, st in r["signals"].items():
+        lines.append(f"{'✅' if st == 'UP' else '❌'} {label}")
+    lines.append(f"→ {r['agreement']}  (gate {THRESHOLD})")
+    lines.append(f"Target exposure: {r['new_target_exposure_pct']:.0f}%")
+    lines.append(f"BTC ${r['btc_price']:,.2f} · bar {r['closed_bar_date']}")
     return "\n".join(lines)
 
 
 def reply_trades(n: int = 10) -> str:
-    if not TRADES.exists():
+    if not TRADES_FILE.exists():
         return "🧾 No paper trades yet — the bot has been flat (in cash)."
     import pandas as pd
-    df = pd.read_csv(TRADES).tail(n)
+    df = pd.read_csv(TRADES_FILE).tail(n)
     lines = [f"🧾 Last {len(df)} trades:"]
     for _, r in df.iterrows():
         lines.append(

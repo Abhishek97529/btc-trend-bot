@@ -1,0 +1,31 @@
+{
+  "timestamp_utc": "2026-07-23T21:26:45.886284+00:00",
+  "closed_bar_date": "2026-07-22",
+  "run_number": 1,
+  "dry_run": true,
+  "action": "HOLD",
+  "side": "NONE",
+  "btc_price": 66114.49,
+  "agreement": "1/7 = 0.143",
+  "signals": {
+    "close > SMA(50)": "UP",
+    "close > SMA(100)": "down",
+    "close > SMA(200)": "down",
+    "EMA(20) > EMA(50)": "down",
+    "EMA(50) > EMA(100)": "down",
+    "Donchian(55) breakout": "down",
+    "ROC(90) > 0": "down"
+  },
+  "previous_exposure_pct": 0.0,
+  "new_target_exposure_pct": 0.0,
+  "btc_units_traded": 0.0,
+  "trade_value_usd": 0.0,
+  "cost_usd": 0.0,
+  "cash_usd": 10000.0,
+  "btc_units": 0.0,
+  "btc_value_usd": 0.0,
+  "total_equity_usd": 10000.0,
+  "total_return_pct": 0.0,
+  "current_exposure_pct": 0.0,
+  "summary": "HOLD: 1/7 signals up \u2192 target 0%. no material change (dust/HOLD). Equity $10,000.00 \u2192 $10,000.00. [DRY-RUN \u2014 state unchanged]"
+}

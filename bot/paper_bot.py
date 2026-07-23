@@ -59,6 +59,13 @@ SIGNAL_LABELS = {
 
 STATE = Path(__file__).resolve().parent / "state.json"
 TRADES = Path(__file__).resolve().parent / "trades.csv"
+STATUS = Path(__file__).resolve().parent / "status.json"  # latest snapshot for /commands
+
+
+def save_status(r: dict) -> None:
+    """Persist the latest report so the Telegram command bot can read it WITHOUT
+    fetching market data itself (Binance is geo-blocked on CI runners)."""
+    STATUS.write_text(json.dumps(r, indent=2))
 
 
 # ---- State ----------------------------------------------------------------- #
@@ -240,6 +247,7 @@ def cmd_status(args):
     action, side = classify(s, plan, sig["target"])
     # status = a dry report against current state (no mutation)
     r = build_report(s, {**s, "runs": s["runs"]}, sig, plan, action, side, dry=True)
+    save_status(r)
     print_report(r)
     if args.json:
         print(json.dumps(r, indent=2))
@@ -266,6 +274,8 @@ def cmd_run(args):
         save_state(s)
 
     r = build_report(s_before, s if not args.dry_run else s_before, sig, plan, action, side, args.dry_run)
+    if not args.dry_run:
+        save_status(r)   # snapshot for the Telegram command bot to read
     print_report(r)
     if not args.dry_run and side != "NONE":
         log_trade({k: r[k] for k in (

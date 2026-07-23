@@ -62,10 +62,11 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add bot/state.json bot/trades.csv
+          git add bot/state.json bot/trades.csv bot/status.json
           if git diff --cached --quiet; then
             echo "No state change — nothing to commit."
           else
             git commit -m "paper-bot: update state [skip ci]"
+            git pull --rebase origin main
             git push
           fi
