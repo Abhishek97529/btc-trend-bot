@@ -56,10 +56,13 @@ def _download_binance(symbol, interval, start_ms, end_ms, step):
                   "startTime": cur, "endTime": end_ms, "limit": 1000}
         r = None
         last_err = None
-        for attempt in range(4):
+        # Fail FAST: short timeout, few attempts. If the runner can't reach Binance
+        # (geo-block / TCP hang), we want to bail to the Coinbase fallback in seconds,
+        # not stall for minutes on 30s socket timeouts.
+        for attempt in range(2):
             for host in BINANCE_HOSTS:  # try each host before backing off
                 try:
-                    r = session.get(host + KLINES_PATH, params=params, timeout=30)
+                    r = session.get(host + KLINES_PATH, params=params, timeout=8)
                     r.raise_for_status()
                     break
                 except Exception as e:  # geo-block / transient network / rate limit
@@ -67,9 +70,7 @@ def _download_binance(symbol, interval, start_ms, end_ms, step):
                     r = None
             if r is not None:
                 break
-            wait = 2 ** attempt
-            print(f"[data]   binance retry {attempt+1}: {last_err} (sleep {wait}s)")
-            time.sleep(wait)
+            time.sleep(1)
         if r is None:
             raise RuntimeError(f"Binance request failed: {last_err}")
         batch = r.json()
