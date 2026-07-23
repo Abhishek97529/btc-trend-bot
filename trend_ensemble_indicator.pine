@@ -1,0 +1,135 @@
+//@version=5
+// =============================================================================
+// Trend Ensemble - BTC/USDT Daily  |  INDICATOR edition (clean, no backtester)
+// Same locked long/flat spot logic, but as an INDICATOR so TradingView draws NO
+// automatic order markers. You get only the clean ENTER / EXIT / ADD / TRIM
+// labels, the 7-signal dashboard, and alerts for webhook automation.
+//
+// HOW TO USE:
+//   1. Open  BINANCE:BTCUSDT  (SPOT, not .P) on the 1D timeframe.
+//   2. Add this script. Markers appear on the SIGNAL bar (the close that decided
+//      the action). If you trade it, act on the NEXT bar's open (no lookahead).
+//   3. To automate: create an alert -> condition "Trend Ensemble..." -> "Any
+//      alert() function call", and point it at your webhook.
+// =============================================================================
+indicator("Trend Ensemble BTC Daily [Indicator]", overlay=true, max_labels_count=500)
+
+// ---- Inputs -----------------------------------------------------------------
+th        = input.float(0.50, "Agreement threshold", step=0.05, group="Strategy")
+showMAs   = input.bool(true,  "Show moving averages",   group="Visuals")
+showDon   = input.bool(true,  "Show Donchian(55) band", group="Visuals")
+showMarks = input.bool(true,  "Show enter/exit/resize markers", group="Visuals")
+showDash  = input.bool(true,  "Show signal dashboard",  group="Visuals")
+
+// ---- Indicators (all causal) ------------------------------------------------
+sma50  = ta.sma(close, 50)
+sma100 = ta.sma(close, 100)
+sma200 = ta.sma(close, 200)
+ema20  = ta.ema(close, 20)
+ema50  = ta.ema(close, 50)
+ema100 = ta.ema(close, 100)
+roc90  = close / close[90] - 1.0
+
+// Donchian(55) breakout, using the PRIOR 55 bars ([1] excludes current bar)
+donUp = ta.highest(high, 55)[1]
+donDn = ta.lowest(low, 55)[1]
+var int donState = 0
+if not na(donUp) and close > donUp
+    donState := 1
+else if not na(donDn) and close < donDn
+    donState := 0
+
+// ---- The 7 trend votes (1 = uptrend, else 0) --------------------------------
+v1 = close > sma50  ? 1 : 0
+v2 = close > sma100 ? 1 : 0
+v3 = close > sma200 ? 1 : 0
+v4 = ema20  > ema50  ? 1 : 0
+v5 = ema50  > ema100 ? 1 : 0
+v6 = donState
+v7 = roc90 > 0 ? 1 : 0
+votes     = v1 + v2 + v3 + v4 + v5 + v6 + v7
+agreement = votes / 7.0
+
+// ---- Target exposure (fraction of capital in BTC) ---------------------------
+ready = not na(sma200) and not na(roc90)          // warmup guard (~first 200 bars)
+frac  = (ready and agreement >= th) ? agreement : 0.0
+
+// ---- Action detection -------------------------------------------------------
+prevFrac = nz(frac[1], 0.0)
+isEnter  = frac > 0        and prevFrac == 0
+isExit   = frac == 0       and prevFrac > 0
+isAdd    = frac > prevFrac and prevFrac > 0
+isTrim   = frac < prevFrac and frac > 0
+pctTxt   = str.tostring(math.round(frac * 100)) + "%"
+
+// ---- On-chart markers (confirmed bars only -> no repaint) -------------------
+if showMarks and barstate.isconfirmed
+    if isEnter
+        label.new(bar_index, low, "ENTER " + pctTxt, yloc=yloc.belowbar,
+             style=label.style_label_up, color=color.new(color.green, 0),
+             textcolor=color.white, size=size.normal)
+    else if isExit
+        label.new(bar_index, high, "EXIT → CASH", yloc=yloc.abovebar,
+             style=label.style_label_down, color=color.new(color.red, 0),
+             textcolor=color.white, size=size.normal)
+    else if isAdd
+        label.new(bar_index, low, "ADD " + pctTxt, yloc=yloc.belowbar,
+             style=label.style_triangleup, color=color.new(color.teal, 20),
+             textcolor=color.white, size=size.tiny)
+    else if isTrim
+        label.new(bar_index, high, "TRIM " + pctTxt, yloc=yloc.abovebar,
+             style=label.style_triangledown, color=color.new(color.orange, 10),
+             textcolor=color.white, size=size.tiny)
+
+// ---- Overlays ---------------------------------------------------------------
+bgcolor(frac > 0 ? color.new(color.green, 90) : na, title="In market")
+plot(showMAs ? sma50  : na, "SMA50",  color=color.new(color.aqua, 0),   linewidth=1)
+plot(showMAs ? sma100 : na, "SMA100", color=color.new(color.blue, 0),   linewidth=1)
+plot(showMAs ? sma200 : na, "SMA200", color=color.new(color.orange, 0), linewidth=2)
+plot(showDon ? donUp  : na, "Donchian upper", color=color.new(color.gray, 40), style=plot.style_stepline)
+plot(showDon ? donDn  : na, "Donchian lower", color=color.new(color.gray, 40), style=plot.style_stepline)
+
+// ---- Live signal dashboard (top-right) --------------------------------------
+f_yn(cond) => cond == 1 ? "✅" : "❌"
+var table dash = table.new(position.top_right, 2, 11, border_width=1, frame_color=color.gray, frame_width=1)
+if showDash and barstate.islast
+    hdr = color.new(color.gray, 0)
+    bg  = color.new(color.black, 20)
+    table.cell(dash, 0, 0, "Trend Ensemble", text_color=color.white, bgcolor=hdr)
+    table.cell(dash, 1, 0, "state",          text_color=color.white, bgcolor=hdr)
+    table.cell(dash, 0, 1, "close > SMA50",  text_color=color.white, bgcolor=bg)
+    table.cell(dash, 1, 1, f_yn(v1),         bgcolor=bg)
+    table.cell(dash, 0, 2, "close > SMA100", text_color=color.white, bgcolor=bg)
+    table.cell(dash, 1, 2, f_yn(v2),         bgcolor=bg)
+    table.cell(dash, 0, 3, "close > SMA200", text_color=color.white, bgcolor=bg)
+    table.cell(dash, 1, 3, f_yn(v3),         bgcolor=bg)
+    table.cell(dash, 0, 4, "EMA20 > EMA50",  text_color=color.white, bgcolor=bg)
+    table.cell(dash, 1, 4, f_yn(v4),         bgcolor=bg)
+    table.cell(dash, 0, 5, "EMA50 > EMA100", text_color=color.white, bgcolor=bg)
+    table.cell(dash, 1, 5, f_yn(v5),         bgcolor=bg)
+    table.cell(dash, 0, 6, "Donchian(55) up",text_color=color.white, bgcolor=bg)
+    table.cell(dash, 1, 6, f_yn(v6),         bgcolor=bg)
+    table.cell(dash, 0, 7, "ROC(90) > 0",    text_color=color.white, bgcolor=bg)
+    table.cell(dash, 1, 7, f_yn(v7),         bgcolor=bg)
+    table.cell(dash, 0, 8, "Agreement",      text_color=color.white, bgcolor=hdr)
+    table.cell(dash, 1, 8, str.tostring(votes) + "/7", text_color=color.white, bgcolor=hdr)
+    stTxt = frac > 0 ? "IN MARKET " + pctTxt : "FLAT (cash)"
+    stCol = frac > 0 ? color.new(color.green, 0) : color.new(color.red, 0)
+    table.cell(dash, 0, 9, "Target exposure", text_color=color.white, bgcolor=hdr)
+    table.cell(dash, 1, 9, stTxt, text_color=color.white, bgcolor=stCol)
+    table.cell(dash, 0, 10, "Price", text_color=color.white, bgcolor=bg)
+    table.cell(dash, 1, 10, str.tostring(close, format.mintick), text_color=color.white, bgcolor=bg)
+
+// ---- Alerts -----------------------------------------------------------------
+// Classic alertcondition() (pick from the alert dropdown)...
+alertcondition(isEnter, "Enter", "Trend Ensemble: ENTER position")
+alertcondition(isExit,  "Exit",  "Trend Ensemble: EXIT to cash")
+alertcondition(isAdd,   "Add",   "Trend Ensemble: ADD (scale in)")
+alertcondition(isTrim,  "Trim",  "Trend Ensemble: TRIM (scale out)")
+
+// ...and a single alert() call carrying the target exposure (for webhooks).
+if barstate.isconfirmed and (isEnter or isExit or isAdd or isTrim)
+    action = isEnter ? "ENTER" : isExit ? "EXIT" : isAdd ? "ADD" : "TRIM"
+    alert('{"strategy":"trend_ensemble","action":"' + action +
+          '","target_pct":' + str.tostring(math.round(frac * 100)) +
+          ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)

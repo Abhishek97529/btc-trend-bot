@@ -1,0 +1,73 @@
+//@version=5
+// =============================================================================
+// Trend Ensemble - BTC/USDT Daily  (faithful port of STRATEGY_SPEC.md)
+// Long/flat spot trend-follower. Votes across 7 fixed trend signals and sizes
+// exposure by the fraction that agree (gated at 0.50). No shorting, no leverage.
+//
+// HOW TO USE:
+//   1. Open BINANCE:BTCUSDT on the 1D (daily) timeframe.
+//   2. Add this script, open the Strategy Tester tab.
+//   3. Cost is modeled via commission below (0.15% per side = 0.10% fee + 0.05%
+//      slippage). You can also set slippage in Properties if you prefer.
+// =============================================================================
+strategy("Trend Ensemble BTC Daily", overlay=true,
+     initial_capital     = 10000,
+     currency            = currency.USD,
+     commission_type     = strategy.commission.percent,
+     commission_value    = 0.15,        // 0.10% fee + 0.05% slippage, per side
+     pyramiding          = 1000,        // allow incremental rebalancing orders
+     calc_on_every_tick  = false,
+     process_orders_on_close = false)   // orders fill on NEXT bar open (no lookahead)
+
+// ---- Inputs (defaults are the FINAL spec params - leave as-is to match) ------
+th        = input.float(0.50, "Agreement threshold", step=0.05)
+dustFrac  = input.float(0.01, "Min rebalance (fraction of equity)", step=0.005)
+
+// ---- Indicators (all causal) -------------------------------------------------
+sma50  = ta.sma(close, 50)
+sma100 = ta.sma(close, 100)
+sma200 = ta.sma(close, 200)
+ema20  = ta.ema(close, 20)
+ema50  = ta.ema(close, 50)
+ema100 = ta.ema(close, 100)
+roc90  = close / close[90] - 1.0
+
+// Donchian(55) breakout, using the PRIOR 55 bars ([1] excludes current bar)
+donUp = ta.highest(high, 55)[1]
+donDn = ta.lowest(low, 55)[1]
+var int donState = 0
+if not na(donUp) and close > donUp
+    donState := 1
+else if not na(donDn) and close < donDn
+    donState := 0
+
+// ---- The 7 trend votes (1 = uptrend, else 0) ---------------------------------
+v1 = close > sma50  ? 1 : 0
+v2 = close > sma100 ? 1 : 0
+v3 = close > sma200 ? 1 : 0
+v4 = ema20  > ema50  ? 1 : 0
+v5 = ema50  > ema100 ? 1 : 0
+v6 = donState
+v7 = roc90 > 0 ? 1 : 0
+votes     = v1 + v2 + v3 + v4 + v5 + v6 + v7
+agreement = votes / 7.0
+
+// ---- Target exposure (fraction of equity in BTC) -----------------------------
+ready = not na(sma200) and not na(roc90)          // warmup guard (~first 200 bars)
+frac  = (ready and agreement >= th) ? agreement : 0.0
+
+// ---- Rebalance toward target fraction of equity ------------------------------
+targetQty = frac * strategy.equity / close
+diff      = targetQty - strategy.position_size
+minTrade  = dustFrac * strategy.equity / close    // skip dust rebalances
+
+if barstate.isconfirmed
+    if diff > minTrade
+        strategy.order("rebal+", strategy.long,  qty = diff)          // add exposure
+    else if diff < -minTrade
+        strategy.order("rebal-", strategy.short, qty = -diff)         // trim exposure (nets down, never flips short)
+
+// ---- Visuals -----------------------------------------------------------------
+bgcolor(frac > 0 ? color.new(color.green, 88) : na, title="In market")
+plot(sma200, "SMA200", color=color.orange)
+plotchar(frac, "Target exposure", "", location.bottom, size=size.tiny)

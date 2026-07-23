@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Data cache (regenerated from Binance on each run — no need to version it)
+data/*.parquet
+
+# Local logs
+bot/bot.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NOTE: bot/state.json and bot/trades.csv are intentionally NOT ignored —
+# the GitHub Actions workflow commits them back so paper-trading state persists.

@@ -1,0 +1,60 @@
+name: paper-bot-daily
+
+# Runs the trend_ensemble paper bot once per day, just after the Binance daily
+# candle closes (00:00 UTC), then commits the updated state back to the repo so
+# the paper-trading position persists between runs. Mobile push notifications
+# fire from here too (via repo Secrets).
+on:
+  schedule:
+    # 00:20 UTC daily — a safe margin after the 00:00 UTC daily bar close.
+    - cron: "20 0 * * *"
+  workflow_dispatch: {}   # allow manual "Run workflow" from the Actions tab
+
+# Needed so the workflow can push the updated state.json / trades.csv back.
+permissions:
+  contents: write
+
+concurrency:
+  group: paper-bot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run paper bot
+        env:
+          # Configure whichever channel(s) you want as repo Secrets:
+          #   Settings -> Secrets and variables -> Actions -> New repository secret
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC:          ${{ secrets.NTFY_TOPIC }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          BOT_WEBHOOK_URL:     ${{ secrets.BOT_WEBHOOK_URL }}
+          # Set to "1" if you also want a daily HOLD heartbeat push.
+          BOT_NOTIFY_HEARTBEAT: ${{ vars.BOT_NOTIFY_HEARTBEAT }}
+        run: python bot/paper_bot.py run
+
+      - name: Commit updated state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bot/state.json bot/trades.csv
+          if git diff --cached --quiet; then
+            echo "No state change — nothing to commit."
+          else
+            git commit -m "paper-bot: update state [skip ci]"
+            git push
+          fi
