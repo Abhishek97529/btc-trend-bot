@@ -8,7 +8,12 @@ on:
   schedule:
     # 00:20 UTC daily — a safe margin after the 00:00 UTC daily bar close.
     - cron: "20 0 * * *"
-  workflow_dispatch: {}   # allow manual "Run workflow" from the Actions tab
+  workflow_dispatch:
+    inputs:
+      test_notify:
+        description: "Send a TEST push (verify your phone gets it) instead of a real run"
+        type: boolean
+        default: false
 
 # Needed so the workflow can push the updated state.json / trades.csv back.
 permissions:
@@ -21,6 +26,16 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      # Configure whichever channel(s) you want as repo Secrets:
+      #   Settings -> Secrets and variables -> Actions -> New repository secret
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+      NTFY_TOPIC:          ${{ secrets.NTFY_TOPIC }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      BOT_WEBHOOK_URL:     ${{ secrets.BOT_WEBHOOK_URL }}
+      # Set to "1" if you also want a daily HOLD heartbeat push.
+      BOT_NOTIFY_HEARTBEAT: ${{ vars.BOT_NOTIFY_HEARTBEAT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,20 +49,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Send TEST notification (manual toggle only)
+        if: ${{ inputs.test_notify }}
+        run: python bot/notify.py
+
       - name: Run paper bot
-        env:
-          # Configure whichever channel(s) you want as repo Secrets:
-          #   Settings -> Secrets and variables -> Actions -> New repository secret
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
-          NTFY_TOPIC:          ${{ secrets.NTFY_TOPIC }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          BOT_WEBHOOK_URL:     ${{ secrets.BOT_WEBHOOK_URL }}
-          # Set to "1" if you also want a daily HOLD heartbeat push.
-          BOT_NOTIFY_HEARTBEAT: ${{ vars.BOT_NOTIFY_HEARTBEAT }}
+        if: ${{ !inputs.test_notify }}
         run: python bot/paper_bot.py run
 
       - name: Commit updated state
+        if: ${{ !inputs.test_notify }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
