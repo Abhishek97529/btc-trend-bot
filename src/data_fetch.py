@@ -20,7 +20,14 @@ truststore.inject_into_ssl()  # trust the corporate root CA via Windows cert sto
 import requests
 import pandas as pd
 
-BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
+KLINES_PATH = "/api/v3/klines"
+# Try the public data-only mirror FIRST: it serves identical klines and is NOT
+# geo-blocked, so it works from US-hosted CI runners (GitHub Actions). Fall back
+# to the primary host (works locally / behind the corporate proxy).
+BINANCE_HOSTS = [
+    "https://data-api.binance.vision",
+    "https://api.binance.com",
+]
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -69,17 +76,24 @@ def fetch_klines(
             "endTime": end_ms,
             "limit": 1000,
         }
+        r = None
+        last_err = None
         for attempt in range(5):
-            try:
-                r = session.get(BINANCE_KLINES_URL, params=params, timeout=30)
-                r.raise_for_status()
+            for host in BINANCE_HOSTS:  # try each host before backing off
+                try:
+                    r = session.get(host + KLINES_PATH, params=params, timeout=30)
+                    r.raise_for_status()
+                    break
+                except Exception as e:  # geo-block / transient network / rate limit
+                    last_err = e
+                    r = None
+            if r is not None:
                 break
-            except Exception as e:  # transient network / rate limit
-                wait = 2 ** attempt
-                print(f"[data]   retry {attempt+1} after error: {e} (sleep {wait}s)")
-                time.sleep(wait)
-        else:
-            raise RuntimeError("Binance request failed after 5 retries")
+            wait = 2 ** attempt
+            print(f"[data]   retry {attempt+1} after error: {last_err} (sleep {wait}s)")
+            time.sleep(wait)
+        if r is None:
+            raise RuntimeError(f"Binance request failed after retries: {last_err}")
 
         batch = r.json()
         if not batch:
