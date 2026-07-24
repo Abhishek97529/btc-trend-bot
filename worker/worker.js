@@ -36,7 +36,9 @@ export default {
 
     const msg = update.message || update.edited_message;
     if (!msg || !msg.text) return new Response("ok");
-    if (String(msg.chat.id) !== String(env.TELEGRAM_CHAT_ID)) return new Response("ok");
+    // TELEGRAM_CHAT_ID may be a comma-separated allow-list (you + friends).
+    const allowed = String(env.TELEGRAM_CHAT_ID).split(",").map((s) => s.trim());
+    if (!allowed.includes(String(msg.chat.id))) return new Response("ok");
 
     const text = msg.text.trim();
     if (!text.startsWith("/")) return new Response("ok");
@@ -46,7 +48,8 @@ export default {
     try { reply = await route(cmd, env); }
     catch (e) { reply = "⚠️ Error: " + e.message; }
 
-    await sendMessage(env, reply);
+    // Reply to whoever sent the command (not a fixed chat).
+    await sendMessage(env, msg.chat.id, reply);
     return new Response("ok");
   },
 };
@@ -130,10 +133,10 @@ function sign(n) {
   return (Number(n) >= 0 ? "+" : "") + Number(n).toFixed(2);
 }
 
-async function sendMessage(env, text) {
+async function sendMessage(env, chatId, text) {
   await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text }),
+    body: JSON.stringify({ chat_id: chatId, text }),
   });
 }

@@ -63,8 +63,11 @@ def _send_telegram(title: str, body: str) -> str | None:
     import requests
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     text = f"<b>{title}</b>\n<pre>{body}</pre>"
-    requests.post(url, json={"chat_id": chat, "text": text, "parse_mode": "HTML",
-                             "disable_web_page_preview": True}, timeout=15).raise_for_status()
+    # TELEGRAM_CHAT_ID may be a comma-separated list (you + friends) — send to each.
+    chat_ids = [c.strip() for c in chat.split(",") if c.strip()]
+    for cid in chat_ids:
+        requests.post(url, json={"chat_id": cid, "text": text, "parse_mode": "HTML",
+                                 "disable_web_page_preview": True}, timeout=15).raise_for_status()
     return "telegram"
 
 
