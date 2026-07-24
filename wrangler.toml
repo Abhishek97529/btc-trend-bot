@@ -1,0 +1,5 @@
+# Cloudflare Workers config — tells Workers Builds what to deploy on each push.
+# The Worker itself is the Telegram command handler in worker/worker.js.
+name = "btc-trend-bot"
+main = "worker/worker.js"
+compatibility_date = "2025-01-01"
