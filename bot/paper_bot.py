@@ -60,6 +60,7 @@ SIGNAL_LABELS = {
 STATE = Path(__file__).resolve().parent / "state.json"
 TRADES = Path(__file__).resolve().parent / "trades.csv"
 STATUS = Path(__file__).resolve().parent / "status.json"  # latest snapshot for /commands
+LIVE_META = Path(__file__).resolve().parent / "live_state.json"  # last_bar/initial for --live
 
 
 def save_status(r: dict) -> None:
@@ -90,6 +91,42 @@ def log_trade(row: dict) -> None:
     df = pd.DataFrame([row])
     header = not TRADES.exists()
     df.to_csv(TRADES, mode="a", header=header, index=False)
+
+
+# ---- LIVE state (--live) --------------------------------------------------- #
+# In live mode the EXCHANGE is the source of truth for balances; we persist only
+# the bookkeeping the exchange can't give us: which bar we last acted on, the
+# starting equity (for return %), and a run counter.
+def load_live_meta() -> dict:
+    if LIVE_META.exists():
+        return json.loads(LIVE_META.read_text())
+    return {"last_bar": None, "last_target": 0.0, "runs": 0, "initial_capital": None}
+
+
+def save_live_meta(m: dict) -> None:
+    LIVE_META.write_text(json.dumps(m, indent=2))
+
+
+def live_snapshot(sig: dict) -> tuple[dict, float]:
+    """Build a paper-bot-shaped `state` dict from REAL CoinDCX balances + price.
+    Returns (state, live_price_in_quote_currency). Records starting equity once."""
+    import coindcx  # lazy: only import the broker when actually going live
+    price = coindcx.get_last_price()
+    quote_free, base_free = coindcx.get_holdings()
+    meta = load_live_meta()
+    eq = quote_free + base_free * price
+    if meta["initial_capital"] is None:
+        meta["initial_capital"] = eq
+        save_live_meta(meta)
+    s = {
+        "cash": quote_free,          # quote currency (INR or USDT)
+        "btc": base_free,            # base currency (BTC)
+        "initial_capital": meta["initial_capital"],
+        "last_bar": meta["last_bar"],
+        "last_target": meta.get("last_target", 0.0),
+        "runs": meta["runs"],
+    }
+    return s, price
 
 
 # ---- Market data + signal detail ------------------------------------------- #
@@ -241,9 +278,14 @@ def notify(r: dict) -> None:
 
 # ---- Commands -------------------------------------------------------------- #
 def cmd_status(args):
-    s = load_state()
     sig = signal_detail()
-    plan = compute_rebalance(s, sig["price"], sig["target"])
+    if getattr(args, "live", False):
+        s, price = live_snapshot(sig)
+        sig = {**sig, "price": price}
+    else:
+        s = load_state()
+        price = sig["price"]
+    plan = compute_rebalance(s, price, sig["target"])
     action, side = classify(s, plan, sig["target"])
     # status = a dry report against current state (no mutation)
     r = build_report(s, {**s, "runs": s["runs"]}, sig, plan, action, side, dry=True)
@@ -254,24 +296,43 @@ def cmd_status(args):
 
 
 def cmd_run(args):
-    s = load_state()
+    live = getattr(args, "live", False)
     sig = signal_detail()
+    if live:
+        # Balances + price come from CoinDCX; the signal (votes/target) is still
+        # computed on Binance BTCUSDT — BTC's trend is the same whatever you settle in.
+        s, price = live_snapshot(sig)
+        sig = {**sig, "price": price}   # size + report in the QUOTE currency
+    else:
+        s = load_state()
+        price = sig["price"]
+
     already = (s["last_bar"] == str(sig["bar_time"]))
     if already and not args.dry_run:
         print(f"[run] already acted on bar {sig['bar_time'].date()} — nothing to do.")
         return
 
-    plan = compute_rebalance(s, sig["price"], sig["target"])
+    plan = compute_rebalance(s, price, sig["target"])
     action, side = classify(s, plan, sig["target"])
 
     s_before = dict(s)
     if not args.dry_run:
         if plan["material"]:
-            apply_plan(s, sig["price"], plan)
+            if live:
+                import coindcx
+                coindcx.place_market_order(side, abs(plan["delta_units"]), price)
+                time.sleep(3)  # let the fill settle before we re-read balances
+                s["cash"], s["btc"] = coindcx.get_holdings()  # reconcile to reality
+            else:
+                apply_plan(s, price, plan)
         s["last_bar"] = str(sig["bar_time"])
         s["last_target"] = sig["target"]
         s["runs"] += 1
-        save_state(s)
+        if live:
+            save_live_meta({"last_bar": s["last_bar"], "last_target": s["last_target"],
+                            "runs": s["runs"], "initial_capital": s["initial_capital"]})
+        else:
+            save_state(s)
 
     r = build_report(s_before, s if not args.dry_run else s_before, sig, plan, action, side, args.dry_run)
     if not args.dry_run:
@@ -318,6 +379,10 @@ def main():
     ap.add_argument("command", choices=["status", "run", "reset", "loop"])
     ap.add_argument("--dry-run", action="store_true",
                     help="compute + report WITHOUT changing state or logging")
+    ap.add_argument("--live", action="store_true",
+                    help="LIVE trade on CoinDCX (needs COINDCX_KEY/SECRET + COINDCX_LIVE_ARMED=1). "
+                         "Reads real balances, places real market orders. Combine with --dry-run "
+                         "to preview a live decision against real balances WITHOUT ordering.")
     ap.add_argument("--json", action="store_true", help="also print the machine JSON blob")
     args = ap.parse_args()
     {"status": cmd_status, "run": cmd_run, "reset": cmd_reset, "loop": cmd_loop}[args.command](args)
