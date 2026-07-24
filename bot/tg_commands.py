@@ -145,13 +145,20 @@ def main() -> None:
     offset = _load_offset()
     if offset is not None:
         params["offset"] = offset
+    print(f"[tg] polling getUpdates (offset={offset}) ...")
 
     r = requests.get(f"{api}/getUpdates", params=params, timeout=30)
+    if r.status_code == 409:
+        # Another getUpdates is in flight (overlapping run / webhook set). Skip;
+        # the next scheduled poll will pick things up. Don't crash the job.
+        print("[tg] 409 conflict — another poll is running; skipping this cycle.")
+        return
     r.raise_for_status()
     updates = r.json().get("result", [])
     if not updates:
-        print("[tg] no new messages.")
+        print("[tg] no new messages (offset is up to date). Send a NEW command, then re-run.")
         return
+    print(f"[tg] got {len(updates)} update(s).")
 
     highest = offset - 1 if offset is not None else -1
     answered = 0
