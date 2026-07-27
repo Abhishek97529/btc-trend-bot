@@ -26,11 +26,11 @@ const HELP =
   "/help — this message";
 
 const HELP_4H =
-  "\n\n4-hour dynamic MA250 paper bot:\n" +
-  "/4h - portfolio and position\n" +
-  "/4hsignal - signal and position sizing\n" +
-  "/4htrades - recent trades\n" +
-  "/4hhealth - scheduler health";
+  "\n\nFixed MA250 4-hour paper bots:\n" +
+  "/4hflat - 2x long / flat portfolio\n" +
+  "/4hls - 2x long / 0.5x short portfolio\n" +
+  "/4hflattrades or /4hlstrades - recent trades\n" +
+  "/4hhealth - scheduler health for both";
 
 const FLAG_PATH = "bot/live_flag.json";
 
@@ -93,8 +93,8 @@ async function loadStatus(env) {
   return txt ? JSON.parse(txt) : null;
 }
 
-async function load4hStatus(env) {
-  const txt = await ghFile("bot/status_4h.json", env);
+async function load4hStatus(variant, env) {
+  const txt = await ghFile(`bot/status_4h_${variant}.json`, env);
   return txt ? JSON.parse(txt) : null;
 }
 
@@ -105,10 +105,12 @@ async function route(cmd, env) {
   if (cmd === "trades") return replyTrades(env);
   if (cmd === "price") return replyPrice(await loadStatus(env));
   if (cmd === "health") return replyHealth(await loadStatus(env));
-  if (cmd === "4h") return reply4hPortfolio(await load4hStatus(env));
-  if (cmd === "4hsignal") return reply4hSignal(await load4hStatus(env));
-  if (cmd === "4htrades") return reply4hTrades(env);
-  if (cmd === "4hhealth") return reply4hHealth(await load4hStatus(env));
+  if (cmd === "4hflat") return reply4hPortfolio(await load4hStatus("long_flat", env));
+  if (cmd === "4hls") return reply4hPortfolio(await load4hStatus("long_short", env));
+  if (cmd === "4hflattrades") return reply4hTrades("long_flat", env);
+  if (cmd === "4hlstrades") return reply4hTrades("long_short", env);
+  if (cmd === "4hhealth") return reply4hHealth(
+    await load4hStatus("long_flat", env), await load4hStatus("long_short", env));
   if (cmd === "help" || cmd === "start") return HELP + HELP_4H;
   return `Unknown command /${cmd}.\n\n${HELP}${HELP_4H}`;
 }
@@ -330,7 +332,7 @@ function replyHealth(r) {
 function reply4hPortfolio(r) {
   if (!r) return "\u{1F534} No 4-hour paper snapshot yet.";
   return [
-    "\u{23F1}\u{FE0F} Dynamic MA250 4h paper account",
+    `\u{23F1}\u{FE0F} ${r.variant === "long_flat" ? "Fixed 2x long / flat" : "Fixed 2x long / 0.5x short"}`,
     `Equity   : $${fmt(r.total_equity_usd)}  (${sign(r.total_return_pct)}%)`,
     `Position : ${r.side} ${sign(r.target_exposure)}x`,
     `BTC qty  : ${Number(r.btc_contract_qty).toFixed(6)}`,
@@ -342,22 +344,8 @@ function reply4hPortfolio(r) {
   ].join("\n");
 }
 
-function reply4hSignal(r) {
-  if (!r) return "\u{1F534} No 4-hour signal snapshot yet.";
-  return [
-    "\u{1F4CA} Dynamic MA250 4h signal",
-    `Direction : ${r.side}`,
-    `Close     : $${fmt(r.closed_price)}`,
-    `SMA250    : $${fmt(r.sma250)}`,
-    `60-bar vol: ${Number(r.realized_vol_pct).toFixed(2)}% annualized`,
-    `Raw size  : ${Number(r.raw_exposure).toFixed(2)}x`,
-    `Target    : ${sign(r.target_exposure)}x`,
-    "Rules: 40% vol target; 0.25x floor; long cap 2x; short cap 0.5x; weekly rebalance.",
-  ].join("\n");
-}
-
-async function reply4hTrades(env) {
-  const csv = await ghFile("bot/trades_4h.csv", env);
+async function reply4hTrades(variant, env) {
+  const csv = await ghFile(`bot/trades_4h_${variant}.csv`, env);
   if (!csv) return "\u{1F4ED} No 4-hour paper trades yet.";
   const rows = csv.trim().split(/\r?\n/);
   if (rows.length < 2) return "\u{1F4ED} No 4-hour paper trades yet.";
@@ -370,17 +358,18 @@ async function reply4hTrades(env) {
   return ["\u{1F4DC} Recent 4-hour paper trades", ...lines].join("\n");
 }
 
-function reply4hHealth(r) {
-  if (!r || !r.timestamp_utc) return "\u{1F534} No 4-hour run recorded yet.";
-  const ageH = (Date.now() - new Date(r.timestamp_utc).getTime()) / 3.6e6;
-  const head = ageH < 6 ? "\u{2705} Healthy - 4-hour run is on schedule."
-    : ageH < 10 ? "\u{26A0}\u{FE0F} Warning - a 4-hour run may be late."
-    : "\u{1F534} STALE - check the 4-hour GitHub workflow.";
+function reply4hHealth(flat, ls) {
+  if (!flat || !ls) return "\u{1F534} One or both fixed 4-hour bots have no snapshot yet.";
+  const flatAge = (Date.now() - new Date(flat.timestamp_utc).getTime()) / 3.6e6;
+  const lsAge = (Date.now() - new Date(ls.timestamp_utc).getTime()) / 3.6e6;
+  const ageH = Math.max(flatAge, lsAge);
+  const head = ageH < 6 ? "\u{2705} Healthy - both 4-hour runs are on schedule."
+    : ageH < 10 ? "\u{26A0}\u{FE0F} Warning - a fixed 4-hour run may be late."
+    : "\u{1F534} STALE - check the fixed 4-hour GitHub workflow.";
   return [
     head,
-    `Last run : ${ageH.toFixed(1)}h ago`,
-    `Last bar : ${String(r.closed_bar_time).slice(0, 16).replace("T", " ")} UTC`,
-    `Source   : ${r.data_source}`,
+    `Long/flat : ${flatAge.toFixed(1)}h ago - ${flat.side}`,
+    `Long/short: ${lsAge.toFixed(1)}h ago - ${ls.side}`,
     "Runs at 00:10, 04:10, 08:10, 12:10, 16:10 and 20:10 UTC.",
   ].join("\n");
 }

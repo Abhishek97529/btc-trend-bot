@@ -1,4 +1,4 @@
-"""Deployed paper bot for the frozen dynamic MA250 4h long/short candidate.
+"""Deployed paper bot for the two fixed MA250 4h paper candidates.
 
 Paper only: this module contains no authenticated broker/order path.
 """
@@ -23,9 +23,17 @@ sys.path.insert(0,str(ROOT/"src"))
 sys.path.insert(0,str(ROOT/"bot"))
 import dynamic_4h_config as C
 
-STATE=ROOT/"bot"/"state_4h.json"
-STATUS=ROOT/"bot"/"status_4h.json"
-TRADES=ROOT/"bot"/"trades_4h.csv"
+VARIANT=os.getenv("FIXED_4H_VARIANT","").strip().lower()
+VARIANTS={
+    "long_flat":{"slug":"fixed_2x_long_flat_4h","short_exposure":0.0},
+    "long_short":{"slug":"fixed_2x_long_short_05_4h","short_exposure":0.5},
+}
+if VARIANT not in VARIANTS:
+    raise RuntimeError("FIXED_4H_VARIANT must be 'long_flat' or 'long_short'")
+V=VARIANTS[VARIANT]
+STATE=ROOT/"bot"/f"state_4h_{VARIANT}.json"
+STATUS=ROOT/"bot"/f"status_4h_{VARIANT}.json"
+TRADES=ROOT/"bot"/f"trades_4h_{VARIANT}.csv"
 INITIAL_CAPITAL=10_000.0
 MEAN_FUNDING_8H=0.0001066
 
@@ -65,9 +73,9 @@ def market_data():
         df=parse_klines(rows)
         df["mark_low"],df["mark_high"],df["mark_open"]=df["low"],df["high"],df["open"]
     closed=df[df.index+pd.Timedelta(hours=4)<=now].copy()
-    if len(closed)<C.MA_BARS+C.VOL_WINDOW_BARS:
+    if len(closed)<C.MA_BARS:
         raise RuntimeError(f"only {len(closed)} closed bars; need at least "
-                           f"{C.MA_BARS+C.VOL_WINDOW_BARS}")
+                           f"{C.MA_BARS}")
     current=df[df.index+pd.Timedelta(hours=4)>now]
     execution_price=float(current["open"].iloc[0]) if len(current) else float(closed["close"].iloc[-1])
     return closed,current,execution_price,source
@@ -96,18 +104,11 @@ def funding_since(last_time,now,source):
 def signal(closed):
     close=closed["close"]
     ma=float(close.rolling(C.MA_BARS).mean().iloc[-1])
-    ret=close.pct_change()
-    vol=float(ret.rolling(C.VOL_WINDOW_BARS).std().iloc[-1]*math.sqrt(C.BARS_PER_YEAR))
-    raw=max(C.MIN_EFFECTIVE_EXPOSURE,C.TARGET_ANNUAL_VOL/vol)
-    direction=1 if close.iloc[-1]>ma else -1
-    exposure=min(raw,C.MAX_LONG_EXPOSURE if direction>0 else C.MAX_SHORT_EXPOSURE)
-    anchor=pd.Timestamp(C.REBALANCE_ANCHOR_UTC)
-    bar_number=int((closed.index[-1]-anchor)/pd.Timedelta(hours=4))
-    scheduled=bar_number%C.REBALANCE_BARS==0
+    direction=1 if close.iloc[-1]>ma else (-1 if V["short_exposure"] else 0)
+    exposure=2.0 if direction>0 else V["short_exposure"]
     return {
         "bar_time":closed.index[-1],"close":float(close.iloc[-1]),"sma250":ma,
-        "realized_vol":vol,"raw_exposure":raw,"direction":direction,
-        "target_exposure":direction*exposure,"scheduled_rebalance":scheduled,
+        "direction":direction,"target_exposure":direction*exposure,
     }
 
 
@@ -154,7 +155,7 @@ def run(dry=False):
 
     current_direction=int(np.sign(state["qty"]))
     direction_change=sig["direction"]!=current_direction
-    trade=direction_change or sig["scheduled_rebalance"]
+    trade=direction_change
     eq_before=max(equity(state,price),0.0)
     old_qty=state["qty"]
     target_qty=(sig["target_exposure"]*eq_before/price) if trade and eq_before>0 else old_qty
@@ -170,17 +171,19 @@ def run(dry=False):
     state["last_bar"]=str(sig["bar_time"]);state["last_direction"]=sig["direction"]
     state["runs"]=state.get("runs",0)+1
     action=("LIQUIDATED" if liquidated else
+            "EXIT" if direction_change and sig["direction"]==0 else
             "REVERSE" if direction_change and old_qty!=0 else
             "ENTER" if direction_change else
-            "REBALANCE" if trade else "HOLD")
+            "HOLD")
     report={
-        "strategy":"dynamic_ma250_long_short_4h","timestamp_utc":pd.Timestamp.now("UTC").isoformat(),
+        "strategy":V["slug"],"variant":VARIANT,
+        "timestamp_utc":pd.Timestamp.now("UTC").isoformat(),
         "closed_bar_time":sig["bar_time"].isoformat(),"run_number":state["runs"],
-        "dry_run":dry,"action":action,"side":"LONG" if sig["direction"]>0 else "SHORT",
+        "dry_run":dry,"action":action,
+        "side":"LONG" if sig["direction"]>0 else ("SHORT" if sig["direction"]<0 else "FLAT"),
         "data_source":data_source,"funding_source":funding_source,
         "btc_price":round(price,2),"closed_price":round(sig["close"],2),
-        "sma250":round(sig["sma250"],2),"realized_vol_pct":round(sig["realized_vol"]*100,2),
-        "raw_exposure":round(sig["raw_exposure"],4),
+        "sma250":round(sig["sma250"],2),
         "target_exposure":round(sig["target_exposure"],4),
         "previous_exposure":round((old_qty*price/eq_before) if eq_before else 0,4),
         "btc_units_traded":round(changed_qty,8),"trade_value_usd":round(notional,2),
@@ -193,8 +196,8 @@ def run(dry=False):
         "liquidated":state.get("liquidated",False),
     }
     report["summary"]=(f"{action} {report['side']} target {sig['target_exposure']:+.2f}x; "
-                       f"BTC ${price:,.0f}, SMA250 ${sig['sma250']:,.0f}, "
-                       f"vol {sig['realized_vol']:.1%}; equity ${eq_after:,.2f}.")
+                       f"BTC ${price:,.0f}, SMA250 ${sig['sma250']:,.0f}; "
+                       f"equity ${eq_after:,.2f}.")
     print(json.dumps(report,indent=2))
     if not dry:
         STATE.write_text(json.dumps(state,indent=2))
@@ -205,11 +208,12 @@ def run(dry=False):
             from notify import notify
             compat={
                 **report,"closed_bar_date":str(sig["bar_time"]),
-                "agreement":f"close {'>' if sig['direction']>0 else '<'} SMA250",
+                "agreement":f"close {'>' if sig['direction']>0 else '<='} SMA250",
                 "previous_exposure_pct":report["previous_exposure"]*100,
                 "new_target_exposure_pct":report["target_exposure"]*100,
                 "current_exposure_pct":report["target_exposure"]*100,
-                "side":"BUY/LONG" if sig["direction"]>0 else "SELL/SHORT",
+                "side":"BUY/LONG" if sig["direction"]>0 else
+                       ("SELL/SHORT" if sig["direction"]<0 else "CASH/FLAT"),
             }
             notify(compat)
         except Exception as exc:
