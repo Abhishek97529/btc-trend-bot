@@ -1,0 +1,49 @@
+name: paper-bot-4h
+
+on:
+  schedule:
+    - cron: "10 0,4,8,12,16,20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: paper-bot-4h
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      BOT_WEBHOOK_URL: ${{ secrets.BOT_WEBHOOK_URL }}
+      BOT_NOTIFY_HEARTBEAT: ${{ vars.BOT_NOTIFY_HEARTBEAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run frozen 4h paper bot
+        run: python bot/paper_4h_bot.py run
+      - name: Commit 4h paper state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for f in bot/state_4h.json bot/status_4h.json bot/trades_4h.csv; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            echo "No state change."
+          else
+            git commit -m "paper-bot-4h: update state [skip ci]"
+            for i in 1 2 3; do
+              git pull --rebase origin main && git push && break
+              sleep 3
+            done
+          fi

@@ -25,6 +25,13 @@ const HELP =
   "/live — show live/paper mode  (owner: /live on CONFIRM · /live off)\n" +
   "/help — this message";
 
+const HELP_4H =
+  "\n\n4-hour dynamic MA250 paper bot:\n" +
+  "/4h - portfolio and position\n" +
+  "/4hsignal - signal and position sizing\n" +
+  "/4htrades - recent trades\n" +
+  "/4hhealth - scheduler health";
+
 const FLAG_PATH = "bot/live_flag.json";
 
 export default {
@@ -86,6 +93,11 @@ async function loadStatus(env) {
   return txt ? JSON.parse(txt) : null;
 }
 
+async function load4hStatus(env) {
+  const txt = await ghFile("bot/status_4h.json", env);
+  return txt ? JSON.parse(txt) : null;
+}
+
 async function route(cmd, env) {
   if (cmd === "portfolio" || cmd === "status") return replyPortfolio(await loadStatus(env));
   if (cmd === "signal") return replySignal(await loadStatus(env));
@@ -93,8 +105,12 @@ async function route(cmd, env) {
   if (cmd === "trades") return replyTrades(env);
   if (cmd === "price") return replyPrice(await loadStatus(env));
   if (cmd === "health") return replyHealth(await loadStatus(env));
-  if (cmd === "help" || cmd === "start") return HELP;
-  return `Unknown command /${cmd}.\n\n${HELP}`;
+  if (cmd === "4h") return reply4hPortfolio(await load4hStatus(env));
+  if (cmd === "4hsignal") return reply4hSignal(await load4hStatus(env));
+  if (cmd === "4htrades") return reply4hTrades(env);
+  if (cmd === "4hhealth") return reply4hHealth(await load4hStatus(env));
+  if (cmd === "help" || cmd === "start") return HELP + HELP_4H;
+  return `Unknown command /${cmd}.\n\n${HELP}${HELP_4H}`;
 }
 
 // --- /live : show mode; owner can toggle the repo flag that arms real trading. #
@@ -308,6 +324,64 @@ function replyHealth(r) {
     `Last bar : ${r.closed_bar_date}`,
     `Last act : ${r.action}  (${r.agreement})`,
     "Daily run fires ~00:20 UTC (5:50 AM IST).",
+  ].join("\n");
+}
+
+function reply4hPortfolio(r) {
+  if (!r) return "\u{1F534} No 4-hour paper snapshot yet.";
+  return [
+    "\u{23F1}\u{FE0F} Dynamic MA250 4h paper account",
+    `Equity   : $${fmt(r.total_equity_usd)}  (${sign(r.total_return_pct)}%)`,
+    `Position : ${r.side} ${sign(r.target_exposure)}x`,
+    `BTC qty  : ${Number(r.btc_contract_qty).toFixed(6)}`,
+    `BTC      : $${fmt(r.btc_price)}`,
+    `Drawdown : ${sign(r.drawdown_pct)}%`,
+    `Action   : ${r.action}`,
+    `Last bar : ${String(r.closed_bar_time).slice(0, 16).replace("T", " ")} UTC`,
+    "PAPER ONLY - no real orders.",
+  ].join("\n");
+}
+
+function reply4hSignal(r) {
+  if (!r) return "\u{1F534} No 4-hour signal snapshot yet.";
+  return [
+    "\u{1F4CA} Dynamic MA250 4h signal",
+    `Direction : ${r.side}`,
+    `Close     : $${fmt(r.closed_price)}`,
+    `SMA250    : $${fmt(r.sma250)}`,
+    `60-bar vol: ${Number(r.realized_vol_pct).toFixed(2)}% annualized`,
+    `Raw size  : ${Number(r.raw_exposure).toFixed(2)}x`,
+    `Target    : ${sign(r.target_exposure)}x`,
+    "Rules: 40% vol target; 0.25x floor; long cap 2x; short cap 0.5x; weekly rebalance.",
+  ].join("\n");
+}
+
+async function reply4hTrades(env) {
+  const csv = await ghFile("bot/trades_4h.csv", env);
+  if (!csv) return "\u{1F4ED} No 4-hour paper trades yet.";
+  const rows = csv.trim().split(/\r?\n/);
+  if (rows.length < 2) return "\u{1F4ED} No 4-hour paper trades yet.";
+  const headers = rows[0].split(",");
+  const ix = (name) => headers.indexOf(name);
+  const lines = rows.slice(-5).reverse().map((row) => {
+    const c = row.split(",");
+    return `${String(c[ix("closed_bar_time")]).slice(0, 10)}  ${c[ix("action")]} ${c[ix("side")]} ${sign(c[ix("target_exposure")])}x @ $${fmt(c[ix("btc_price")])}`;
+  });
+  return ["\u{1F4DC} Recent 4-hour paper trades", ...lines].join("\n");
+}
+
+function reply4hHealth(r) {
+  if (!r || !r.timestamp_utc) return "\u{1F534} No 4-hour run recorded yet.";
+  const ageH = (Date.now() - new Date(r.timestamp_utc).getTime()) / 3.6e6;
+  const head = ageH < 6 ? "\u{2705} Healthy - 4-hour run is on schedule."
+    : ageH < 10 ? "\u{26A0}\u{FE0F} Warning - a 4-hour run may be late."
+    : "\u{1F534} STALE - check the 4-hour GitHub workflow.";
+  return [
+    head,
+    `Last run : ${ageH.toFixed(1)}h ago`,
+    `Last bar : ${String(r.closed_bar_time).slice(0, 16).replace("T", " ")} UTC`,
+    `Source   : ${r.data_source}`,
+    "Runs at 00:10, 04:10, 08:10, 12:10, 16:10 and 20:10 UTC.",
   ].join("\n");
 }
 

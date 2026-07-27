@@ -1,0 +1,11 @@
+{
+  "wallet": 9988.15692909846,
+  "qty": 0.25950476588263666,
+  "entry_price": 65196.0,
+  "initial_capital": 10000.0,
+  "peak_equity": 10000.0,
+  "last_bar": "2026-07-27 04:00:00+00:00",
+  "last_direction": 1,
+  "runs": 1,
+  "liquidated": false
+}
