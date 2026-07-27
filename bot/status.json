@@ -1,11 +1,11 @@
 {
-  "timestamp_utc": "2026-07-26T04:02:51.801467+00:00",
-  "closed_bar_date": "2026-07-25",
-  "run_number": 4,
+  "timestamp_utc": "2026-07-27T04:10:06.008366+00:00",
+  "closed_bar_date": "2026-07-26",
+  "run_number": 5,
   "dry_run": false,
   "action": "HOLD",
   "side": "NONE",
-  "btc_price": 64375.0,
+  "btc_price": 65399.99,
   "agreement": "1/7 = 0.143",
   "signals": {
     "close > SMA(50)": "UP",
