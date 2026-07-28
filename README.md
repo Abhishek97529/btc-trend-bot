@@ -1,7 +1,7 @@
 # BTC systematic-strategy suite
 
-This repository contains four frozen BTC strategies, their independent paper
-accounts, shared execution code, and reproducible research. All four are
+This repository contains five frozen BTC strategies, their independent paper
+accounts, shared execution code, and reproducible research. All five are
 paper-only. Historical performance is evidence for further testing, not a
 promise of future profit.
 
@@ -9,6 +9,7 @@ promise of future profit.
 |---|---|---:|---:|---:|---:|---:|
 | Daily seven-vote ensemble | Spot, 1d | +2,047.6% | 45.7% | 1.14 | -38.3% | 266 |
 | Dual trend | Spot, 4h | +3,898.4% | 62.8% | 1.43 | -46.5% | 351 |
+| Dual trend shadow 30/144/120/240 | Spot, 4h | +4,606.5% | 66.4% | 1.48 | -34.8% | 353 |
 | MA250 +2x/flat | Perpetual, 4h | +4,971.6% | 76.9% | 1.17 | -63.9% | 315 |
 | MA250 +2x/-0.5x | Perpetual, 4h | +6,981.5% | 85.7% | 1.23 | -57.4% | 316 |
 
@@ -23,7 +24,7 @@ strategies/  frozen config, operating notes, and isolated runtime per strategy
 bot/         shared paper runners, exchange adapters, notifications, persistence
 src/         research, backtests, audits, and compatibility imports
 reports/     generated audit tables and evidence
-.github/     one daily and two four-hour paper workflows
+.github/     one daily and three four-hour paper workflows
 worker/      read-only Telegram status interface
 ```
 
@@ -38,6 +39,8 @@ python bot/paper_bot.py status
 python bot/paper_bot.py run --dry-run
 python bot/paper_dual_4h_bot.py status
 python bot/paper_dual_4h_bot.py run --dry-run
+python bot/paper_shadow_4h_bot.py status
+python bot/paper_shadow_4h_bot.py run --dry-run
 ```
 
 For the MA250 runner, set `FIXED_4H_VARIANT` to `long_flat` or `long_short`.
@@ -45,7 +48,7 @@ For the MA250 runner, set `FIXED_4H_VARIANT` to `long_flat` or `long_short`.
 ## Telegram
 
 The read-only Telegram interface is documented in
-[worker/README.md](worker/README.md). `/all` provides the four-account
+[worker/README.md](worker/README.md). `/all` provides the five-account
 dashboard; each strategy also has clearly named portfolio and trade commands.
 
 ## Safety contract

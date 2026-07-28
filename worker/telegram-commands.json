@@ -1,12 +1,14 @@
 {
   "commands": [
-    {"command": "all", "description": "Status of all four paper strategies"},
+    {"command": "all", "description": "Status of all five paper strategies"},
     {"command": "daily", "description": "Daily spot ensemble portfolio"},
     {"command": "daily_signal", "description": "Daily ensemble trend votes"},
     {"command": "daily_stats", "description": "Daily ensemble performance"},
     {"command": "daily_trades", "description": "Recent daily ensemble trades"},
     {"command": "dual4h", "description": "Four-hour dual-trend spot portfolio"},
     {"command": "dual4h_trades", "description": "Recent dual-trend spot trades"},
+    {"command": "shadow4h", "description": "30/144/120/240 spot shadow portfolio"},
+    {"command": "shadow4h_trades", "description": "Recent spot shadow trades"},
     {"command": "maflat", "description": "MA250 2x long-or-flat portfolio"},
     {"command": "maflat_trades", "description": "Recent MA250 long-flat trades"},
     {"command": "mashort", "description": "MA250 2x long or 0.5x short"},

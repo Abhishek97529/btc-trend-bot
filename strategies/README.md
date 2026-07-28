@@ -9,6 +9,7 @@ research and backtests remain in `src/`; generated evidence remains in
 |---|---|---|
 | Daily seven-vote spot ensemble | `daily_spot_ensemble/` | Primary paper benchmark |
 | Four-hour dual-trend spot | `spot_4h_dual_trend/` | New independent paper candidate |
+| Four-hour dual-trend 30/144/120/240 | `spot_4h_dual_trend_shadow/` | Experimental paper-only shadow |
 | Four-hour MA250 +2x/flat | `ma250_4h_long_flat/` | Restarted paper candidate |
 | Four-hour MA250 +2x/-0.5x | `ma250_4h_long_short/` | Restarted paper candidate |
 

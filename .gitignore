@@ -7,6 +7,8 @@ venv/
 
 # Regenerable BTC data cache
 data/*.parquet
+# Immutable signal seed for the paper-only 30/144/120/240 shadow account.
+!data/BTCUSDT_4h_2017-08-17_2026-07-27.parquet
 
 # Local logs and process markers
 bot/bot.log
