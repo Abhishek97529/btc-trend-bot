@@ -4,7 +4,7 @@
 **Status:** FROZEN. Live-tradeable via paper bot. Do not tune parameters without full re-validation.
 
 This is the official, frozen definition of the BTC strategy we will trade. All
-parameters live in [src/config.py](src/config.py) — the single source of truth
+parameters live in [src/config.py](../../src/config.py) — the single source of truth
 that the backtest, paper bot, and Pine port all reference.
 
 ---
@@ -21,7 +21,8 @@ that the backtest, paper bot, and Pine port all reference.
 | **Costs** | 0.10% fee + 0.05% slippage per side |
 | **Rebalance** | Once per day after the closed daily bar; skip moves < 1% of equity |
 
-Full mechanics: [STRATEGY_SPEC.md](STRATEGY_SPEC.md). Pine port: [trend_ensemble.pine](trend_ensemble.pine).
+Full mechanics: [STRATEGY_SPEC.md](STRATEGY_SPEC.md). Pine port:
+[trend_ensemble.pine](../../pine/trend_ensemble.pine).
 
 ---
 
@@ -50,7 +51,7 @@ sustained bull runs (2020, 2023, 2024) and wins by sidestepping the deep bears.
 - **Spot, 1x.** Leverage was tested and rejected: 2x/3x leave Sharpe **unchanged**
   (1.03) while blowing max drawdown to −71% / −89%; 5x is **liquidated** (2021-01-11).
   Leverage adds risk and funding cost, not risk-adjusted return. See
-  [src/test_leverage_full.py](src/test_leverage_full.py).
+  [src/test_leverage_full.py](../../src/test_leverage_full.py).
 - **BTC only.** Multi-asset (6 coins) did not improve Sharpe and worsened drawdown.
 - **No trailing stop.** It cut the winners the strategy depends on.
 - **No funding-rate filter.** No robust improvement in testing.

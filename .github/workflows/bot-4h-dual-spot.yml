@@ -1,0 +1,52 @@
+name: paper-bot-4h-dual-spot
+
+on:
+  schedule:
+    - cron: "15 0,4,8,12,16,20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: paper-bot-4h-dual-spot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      BOT_WEBHOOK_URL: ${{ secrets.BOT_WEBHOOK_URL }}
+      BOT_NOTIFY_HEARTBEAT: ${{ vars.BOT_NOTIFY_HEARTBEAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run dual-trend spot paper strategy
+        run: python bot/paper_dual_4h_bot.py run
+      - name: Commit dual-trend paper state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          PKG=strategies/spot_4h_dual_trend/runtime
+          for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv"; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            echo "No state change."
+          else
+            git commit -m "paper-bot-4h-dual-spot: update state [skip ci]"
+            pushed=0
+            for i in 1 2 3 4 5; do
+              if git pull --rebase origin main && git push; then pushed=1; break; fi
+              sleep $((i * 3))
+            done
+            [ "$pushed" = "1" ] || { echo "::error::state push failed"; exit 1; }
+          fi

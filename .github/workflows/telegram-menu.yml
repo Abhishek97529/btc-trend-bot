@@ -1,0 +1,31 @@
+name: Sync Telegram command menu
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "worker/telegram-commands.json"
+      - ".github/workflows/telegram-menu.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply command menu
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          test -n "$TELEGRAM_BOT_TOKEN"
+          response="$(
+            curl --fail-with-body --silent --show-error \
+              -H "Content-Type: application/json" \
+              --data-binary @worker/telegram-commands.json \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands"
+          )"
+          python -c 'import json,sys; payload=json.load(sys.stdin); assert payload.get("ok") is True, payload' <<< "$response"

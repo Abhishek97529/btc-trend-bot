@@ -1,0 +1,27 @@
+"""Frozen research candidate: BTCUSDT spot EMA trend strategy.
+
+This is separate from the locked daily strategy and is NOT live-approved.
+"""
+
+STATUS = "RESEARCH_CANDIDATE_FOR_PROSPECTIVE_PAPER_TEST"
+FROZEN_DATE = "2026-07-28"
+
+SYMBOL = "BTCUSDT"
+MARKET = "spot"
+TIMEFRAME = "4h"
+TIMEZONE = "UTC"
+
+FAST_EMA = 24
+SLOW_EMA = 168
+THRESHOLD = 0.0
+EXECUTION_DELAY_BARS = 1
+
+FEE = 0.001
+SLIPPAGE = 0.0005
+MIN_TRADE_FRAC = 0.01
+INITIAL_CAPITAL = 100_000.0
+BARS_PER_YEAR = 6 * 365
+
+LONG_EXPOSURE = 1.0
+FLAT_EXPOSURE = 0.0
+LIVE_TRADING_APPROVED = False

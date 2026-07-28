@@ -1,0 +1,5 @@
+strategy,status,market,timeframe,test_start,test_end,published_reference_return_pct,audited_contract_return_pct,cagr_pct,sharpe,max_dd_pct,order_events
+daily_7_vote_ensemble,deployed_paper_with_live_path,spot,1d,2018-06-01,2026-07-23,2326.37,2047.58,45.69,1.136,-38.27,266
+dual_trend,research_candidate_not_deployed,spot,4h,2019-01-01,2026-07-27,3897.59,3898.42,62.78,1.426,-46.50,351
+ma250_2x_long_flat,deployed_paper,perpetual,4h,2019-09-08,2026-07-27,4994.00,4971.60,76.9,1.169,-63.89,315
+ma250_2x_long_short_05,deployed_paper,perpetual,4h,2019-09-08,2026-07-27,7021.78,6981.51,85.7,1.225,-57.42,316

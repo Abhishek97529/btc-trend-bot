@@ -27,8 +27,10 @@ import sys
 from pathlib import Path
 
 BOT_DIR = Path(__file__).resolve().parent
-STATUS_FILE = BOT_DIR / "status.json"     # snapshot written by the daily paper bot
-TRADES_FILE = BOT_DIR / "trades.csv"
+ROOT = BOT_DIR.parent
+RUNTIME = ROOT / "strategies" / "daily_spot_ensemble" / "runtime"
+STATUS_FILE = RUNTIME / "status.json"
+TRADES_FILE = RUNTIME / "trades.csv"
 OFFSET_FILE = BOT_DIR / "tg_offset.json"
 THRESHOLD = 0.5
 

@@ -5,15 +5,21 @@ __pycache__/
 venv/
 .env
 
-# Data cache (regenerated from Binance on each run — no need to version it)
+# Regenerable BTC data cache
 data/*.parquet
 
-# Local logs
+# Local logs and process markers
 bot/bot.log
+*.log
+*.pid
+
+# Local Cloudflare state and secrets
+.wrangler/
+.dev.vars
 
 # OS
 .DS_Store
 Thumbs.db
 
-# NOTE: bot/state.json and bot/trades.csv are intentionally NOT ignored —
-# the GitHub Actions workflow commits them back so paper-trading state persists.
+# Strategy runtime JSON/CSV is intentionally versioned because GitHub Actions
+# persists each independent paper account there.

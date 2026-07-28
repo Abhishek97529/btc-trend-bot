@@ -33,9 +33,16 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # bot/ (for notify.py)
 sys.path.insert(0, str(ROOT / "src"))
-from data_fetch import fetch_klines  # noqa: E402  (also injects truststore SSL fix)
+sys.path.insert(0, str(ROOT))
+from data_fetch import fetch_klines, fetch_spot_ticker  # noqa: E402
 from strategies_v2 import trend_ensemble, _trend_votes  # noqa: E402
-import config as C  # noqa: E402  (LOCKED single source of truth)
+from strategies.daily_spot_ensemble import config as C  # noqa: E402
+from runtime import (  # noqa: E402
+    append_csv_dedup,
+    atomic_write_json,
+    load_json,
+    require_new_bar,
+)
 
 # ---- Config (all values come from the LOCKED src/config.py) ---------------- #
 SYMBOL = C.SYMBOL
@@ -57,40 +64,37 @@ SIGNAL_LABELS = {
     "mom90": "ROC(90) > 0",
 }
 
-STATE = Path(__file__).resolve().parent / "state.json"
-TRADES = Path(__file__).resolve().parent / "trades.csv"
-STATUS = Path(__file__).resolve().parent / "status.json"  # latest snapshot for /commands
-LIVE_META = Path(__file__).resolve().parent / "live_state.json"  # last_bar/initial for --live
+RUNTIME = ROOT / "strategies" / "daily_spot_ensemble" / "runtime"
+STATE = RUNTIME / "state.json"
+TRADES = RUNTIME / "trades.csv"
+STATUS = RUNTIME / "status.json"
+LIVE_META = RUNTIME / "live_state.json"
 
 
 def save_status(r: dict) -> None:
     """Persist the latest report so the Telegram command bot can read it WITHOUT
     fetching market data itself (Binance is geo-blocked on CI runners)."""
-    STATUS.write_text(json.dumps(r, indent=2))
+    atomic_write_json(STATUS, r)
 
 
 # ---- State ----------------------------------------------------------------- #
 def load_state() -> dict:
-    if STATE.exists():
-        return json.loads(STATE.read_text())
-    return {
+    return load_json(STATE, {
         "cash": INITIAL_CAPITAL,
         "btc": 0.0,
         "initial_capital": INITIAL_CAPITAL,
         "last_bar": None,          # timestamp of last bar we acted on
         "last_target": 0.0,
         "runs": 0,
-    }
+    })
 
 
 def save_state(s: dict) -> None:
-    STATE.write_text(json.dumps(s, indent=2))
+    atomic_write_json(STATE, s)
 
 
 def log_trade(row: dict) -> None:
-    df = pd.DataFrame([row])
-    header = not TRADES.exists()
-    df.to_csv(TRADES, mode="a", header=header, index=False)
+    append_csv_dedup(TRADES, row, ("closed_bar_date", "action", "side"))
 
 
 # ---- LIVE state (--live) --------------------------------------------------- #
@@ -98,13 +102,14 @@ def log_trade(row: dict) -> None:
 # the bookkeeping the exchange can't give us: which bar we last acted on, the
 # starting equity (for return %), and a run counter.
 def load_live_meta() -> dict:
-    if LIVE_META.exists():
-        return json.loads(LIVE_META.read_text())
-    return {"last_bar": None, "last_target": 0.0, "runs": 0, "initial_capital": None}
+    return load_json(
+        LIVE_META,
+        {"last_bar": None, "last_target": 0.0, "runs": 0, "initial_capital": None},
+    )
 
 
 def save_live_meta(m: dict) -> None:
-    LIVE_META.write_text(json.dumps(m, indent=2))
+    atomic_write_json(LIVE_META, m)
 
 
 def live_snapshot(sig: dict) -> tuple[dict, float]:
@@ -132,18 +137,32 @@ def live_snapshot(sig: dict) -> tuple[dict, float]:
 # ---- Market data + signal detail ------------------------------------------- #
 def signal_detail() -> dict:
     """Compute target exposure AND the per-signal breakdown from closed bars only."""
-    start = (pd.Timestamp.now("UTC") - pd.Timedelta(days=WARMUP_DAYS + 30)).strftime("%Y-%m-%d")
-    df = fetch_klines(SYMBOL, "1d", start=start, force=True)
+    df = fetch_klines(
+        SYMBOL,
+        "1d",
+        start=C.WARMUP_START,
+        force=True,
+        allow_fallback=False,
+    )
     # Drop the in-progress candle: keep bars whose full day has elapsed.
     closed = df[df.index <= pd.Timestamp.now("UTC").normalize() - pd.Timedelta(days=1)]
     if closed.empty:
-        closed = df.iloc[:-1]
+        raise RuntimeError("no completed daily candles available")
+    expected = pd.Timestamp.now("UTC").normalize() - pd.Timedelta(days=1)
+    if closed.index[-1] != expected:
+        raise RuntimeError(
+            f"stale daily data: expected {expected}, received {closed.index[-1]}"
+        )
     target = trend_ensemble(closed, threshold=THRESHOLD)
     votes = _trend_votes(closed).iloc[-1]
     up = int(votes.sum())
+    execution_price, execution_source = fetch_spot_ticker(SYMBOL)
     return {
         "bar_time": closed.index[-1],
-        "price": float(closed["close"].iloc[-1]),
+        "price": execution_price,
+        "closed_price": float(closed["close"].iloc[-1]),
+        "signal_source": df.attrs.get("source", "binance"),
+        "execution_source": execution_source,
         "target": float(target.iloc[-1]),
         "votes": {k: int(votes[k]) for k in SIGNAL_LABELS},
         "votes_up": up,
@@ -160,11 +179,25 @@ def compute_rebalance(s: dict, price: float, target_frac: float) -> dict:
     """Compute what a rebalance WOULD do (no mutation). Returns a plan dict."""
     eq = equity(s, price)
     cur_frac = (s["btc"] * price) / eq if eq else 0.0
-    target_units = (eq * target_frac) / price
-    delta_units = target_units - s["btc"]
-    trade_value = abs(delta_units) * price
+    raw_target_units = (eq * target_frac) / price
+    raw_delta = raw_target_units - s["btc"]
+    trade_value = abs(raw_delta) * price
     material = trade_value >= MIN_TRADE_FRAC * eq
-    cost = trade_value * (FEE + SLIPPAGE) if material else 0.0
+    rate = FEE + SLIPPAGE
+    if material and raw_delta > 0:
+        delta_units = (target_frac * eq / price - s["btc"]) / (1 + target_frac * rate)
+    elif material and raw_delta < 0:
+        sold = (
+            s["btc"]
+            if target_frac == 0
+            else (s["btc"] * price - target_frac * eq) / (price * (1 - target_frac * rate))
+        )
+        delta_units = -sold
+    else:
+        delta_units = 0.0
+    target_units = s["btc"] + delta_units
+    trade_value = abs(delta_units) * price
+    cost = trade_value * rate if material else 0.0
     return {
         "eq_before": eq,
         "cur_frac": cur_frac,
@@ -218,6 +251,9 @@ def build_report(s_before: dict, s_after: dict, sig: dict, plan: dict,
         "action": action,
         "side": side,
         "btc_price": round(price, 2),
+        "closed_price": round(sig.get("closed_price", price), 2),
+        "signal_source": sig.get("signal_source", "unknown"),
+        "execution_source": sig.get("execution_source", "unknown"),
         "agreement": f"{sig['votes_up']}/7 = {agr:.3f}",
         "signals": {SIGNAL_LABELS[k]: ("UP" if v else "down") for k, v in sig["votes"].items()},
         "previous_exposure_pct": round(plan["cur_frac"] * 100, 2),
@@ -297,6 +333,11 @@ def cmd_status(args):
 
 def cmd_run(args):
     live = getattr(args, "live", False)
+    if live and not C.LIVE_TRADING_APPROVED:
+        raise RuntimeError(
+            "live trading is disabled by the frozen strategy configuration; "
+            "complete a new approval audit before enabling it"
+        )
     sig = signal_detail()
     if live:
         # Balances + price come from CoinDCX; the signal (votes/target) is still
@@ -307,8 +348,10 @@ def cmd_run(args):
         s = load_state()
         price = sig["price"]
 
-    already = (s["last_bar"] == str(sig["bar_time"]))
-    if already and not args.dry_run:
+    bar_status = require_new_bar(
+        s.get("last_bar"), sig["bar_time"], pd.Timedelta(days=1), max_gap_bars=1
+    )
+    if bar_status == 0 and not args.dry_run:
         print(f"[run] already acted on bar {sig['bar_time'].date()} — nothing to do.")
         return
 
@@ -328,22 +371,21 @@ def cmd_run(args):
         s["last_bar"] = str(sig["bar_time"])
         s["last_target"] = sig["target"]
         s["runs"] += 1
+    r = build_report(s_before, s if not args.dry_run else s_before, sig, plan, action, side, args.dry_run)
+    if not args.dry_run:
+        if side != "NONE":
+            log_trade({k: r[k] for k in (
+                "timestamp_utc", "closed_bar_date", "run_number", "action", "side",
+                "btc_price", "agreement", "previous_exposure_pct", "new_target_exposure_pct",
+                "btc_units_traded", "trade_value_usd", "cost_usd", "total_equity_usd",
+                "total_return_pct")})
+        save_status(r)
         if live:
             save_live_meta({"last_bar": s["last_bar"], "last_target": s["last_target"],
                             "runs": s["runs"], "initial_capital": s["initial_capital"]})
         else:
             save_state(s)
-
-    r = build_report(s_before, s if not args.dry_run else s_before, sig, plan, action, side, args.dry_run)
-    if not args.dry_run:
-        save_status(r)   # snapshot for the Telegram command bot to read
     print_report(r)
-    if not args.dry_run and side != "NONE":
-        log_trade({k: r[k] for k in (
-            "timestamp_utc", "closed_bar_date", "run_number", "action", "side",
-            "btc_price", "agreement", "previous_exposure_pct", "new_target_exposure_pct",
-            "btc_units_traded", "trade_value_usd", "cost_usd", "total_equity_usd",
-            "total_return_pct")})
     if args.json:
         print(json.dumps(r, indent=2))
     if not args.dry_run:

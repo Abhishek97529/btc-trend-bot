@@ -1,0 +1,18 @@
+{
+  "commands": [
+    {"command": "all", "description": "Status of all four paper strategies"},
+    {"command": "daily", "description": "Daily spot ensemble portfolio"},
+    {"command": "daily_signal", "description": "Daily ensemble trend votes"},
+    {"command": "daily_stats", "description": "Daily ensemble performance"},
+    {"command": "daily_trades", "description": "Recent daily ensemble trades"},
+    {"command": "dual4h", "description": "Four-hour dual-trend spot portfolio"},
+    {"command": "dual4h_trades", "description": "Recent dual-trend spot trades"},
+    {"command": "maflat", "description": "MA250 2x long-or-flat portfolio"},
+    {"command": "maflat_trades", "description": "Recent MA250 long-flat trades"},
+    {"command": "mashort", "description": "MA250 2x long or 0.5x short"},
+    {"command": "mashort_trades", "description": "Recent MA250 long-short trades"},
+    {"command": "health", "description": "Scheduler health for all strategies"},
+    {"command": "price", "description": "Current BTC price"},
+    {"command": "help", "description": "Show command guide"}
+  ]
+}

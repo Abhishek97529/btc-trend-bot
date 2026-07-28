@@ -1,0 +1,12 @@
+{
+  "wallet": 10000.0,
+  "qty": 0.0,
+  "entry_price": 0.0,
+  "initial_capital": 10000.0,
+  "peak_equity": 10000.0,
+  "last_bar": null,
+  "last_direction": 0,
+  "last_funding_time": null,
+  "runs": 0,
+  "liquidated": false
+}

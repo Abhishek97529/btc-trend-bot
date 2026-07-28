@@ -1,0 +1,91 @@
+//@version=6
+strategy(
+     "Locked Dynamic MA250 Long/Short 4H",
+     overlay = true,
+     initial_capital = 10000,
+     currency = currency.USD,
+     pyramiding = 0,
+     process_orders_on_close = false,
+     calc_on_order_fills = false,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.07,
+     margin_long = 50,
+     margin_short = 200)
+
+// Locked production-paper parameters.
+maBars       = input.int(250, "SMA length", minval = 2)
+volBars      = input.int(60, "Volatility window", minval = 2)
+targetVol    = input.float(40.0, "Annual volatility target (%)", minval = 0.1) / 100.0
+minExposure  = input.float(0.25, "Minimum exposure", minval = 0.0, step = 0.05)
+maxLong      = input.float(2.00, "Maximum long exposure", minval = 0.0, step = 0.05)
+maxShort     = input.float(0.50, "Maximum short exposure", minval = 0.0, step = 0.05)
+rebalanceN   = input.int(42, "Rebalance every N bars", minval = 1)
+// 1567958400000 = 2019-09-08 16:00:00 UTC. A literal is required because
+// input.time() only accepts a compile-time constant as its default.
+anchor       = input.time(1567958400000, "Rebalance anchor (UTC)")
+showBg       = input.bool(true, "Shade market regime")
+showLabels   = input.bool(true, "Show trade markers")
+
+// This locked model is designed only for a four-hour chart.
+is4h = timeframe.isintraday and timeframe.multiplier == 240
+if barstate.isfirst and not is4h
+    runtime.error("Use this strategy on a 4-hour chart.")
+
+barsPerYear = 6.0 * 365.0
+sma250      = ta.sma(close, maBars)
+barReturn   = close / close[1] - 1.0
+realizedVol = ta.stdev(barReturn, volBars) * math.sqrt(barsPerYear)
+
+longRegime  = close > sma250
+direction   = longRegime ? 1 : -1
+rawExposure = math.max(minExposure, targetVol / realizedVol)
+exposure    = longRegime ? math.min(rawExposure, maxLong) : math.min(rawExposure, maxShort)
+
+// Preserve the deployed 42-bar schedule, anchored at 2019-09-08 16:00 UTC.
+fourHoursMs = 4 * 60 * 60 * 1000
+barsFromAnchor = int(math.floor((time - anchor) / fourHoursMs))
+scheduledRebalance = barsFromAnchor >= 0 and barsFromAnchor % rebalanceN == 0
+directionChanged = not na(direction[1]) and direction != direction[1]
+ready = not na(sma250) and not na(realizedVol) and realizedVol > 0
+tradeNow = ready and (strategy.position_size == 0 or directionChanged or scheduledRebalance)
+
+// Pine evaluates this signal at the close. With process_orders_on_close=false,
+// market orders fill at the next bar's open, matching the locked test convention.
+// Dynamic leverage is converted into BTC units from current strategy equity.
+targetUnits = ready ? direction * exposure * strategy.equity / close : 0.0
+unitsToTrade = targetUnits - strategy.position_size
+if tradeNow
+    if unitsToTrade > 0
+        strategy.order("Adjust up", strategy.long, qty = unitsToTrade)
+    else if unitsToTrade < 0
+        strategy.order("Adjust down", strategy.short, qty = math.abs(unitsToTrade))
+
+// Chart display.
+maColor = longRegime ? color.lime : color.red
+plot(sma250, "SMA250", color = maColor, linewidth = 2)
+plot(close, "Close", color = color.new(color.white, 70))
+bgcolor(showBg ? color.new(longRegime ? color.green : color.red, 90) : na)
+
+longFlip  = ready and directionChanged and longRegime
+shortFlip = ready and directionChanged and not longRegime
+longInit  = ready and strategy.position_size == 0 and longRegime
+shortInit = ready and strategy.position_size == 0 and not longRegime
+
+plotshape(showLabels and (longFlip or longInit), title = "Long entry", style = shape.labelup,
+          location = location.belowbar, color = color.green, text = "LONG", textcolor = color.white,
+          size = size.tiny)
+plotshape(showLabels and (shortFlip or shortInit), title = "Short entry", style = shape.labeldown,
+          location = location.abovebar, color = color.red, text = "SHORT", textcolor = color.white,
+          size = size.tiny)
+plotshape(showLabels and ready and scheduledRebalance and not directionChanged,
+          title = "Scheduled rebalance", style = shape.circle, location = location.bottom,
+          color = color.orange, text = "R", textcolor = color.black, size = size.tiny)
+
+// Values available in TradingView's Data Window.
+plot(exposure, "Target exposure (x)", display = display.data_window)
+plot(realizedVol * 100.0, "Annualized realized volatility (%)", display = display.data_window)
+plot(rawExposure, "Uncapped exposure (x)", display = display.data_window)
+
+alertcondition(longFlip, "MA250 LONG", "BTC 4H changed to LONG above SMA250.")
+alertcondition(shortFlip, "MA250 SHORT", "BTC 4H changed to SHORT below SMA250.")
+alertcondition(ready and scheduledRebalance, "MA250 REBALANCE", "BTC 4H scheduled position rebalance.")

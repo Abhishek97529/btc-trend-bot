@@ -124,13 +124,16 @@ def fetch_klines(
     start: str = "2019-01-01",
     end: str | None = None,
     force: bool = False,
+    allow_fallback: bool = True,
 ) -> pd.DataFrame:
     """Fetch (and cache) OHLCV klines. Returns a DataFrame indexed by UTC timestamp."""
     end = end or pd.Timestamp.now("UTC").strftime("%Y-%m-%d")
     cache = DATA_DIR / f"{symbol}_{interval}_{start}_{end}.parquet"
     if cache.exists() and not force:
         print(f"[data] loading cached {cache.name}")
-        return pd.read_parquet(cache)
+        df = pd.read_parquet(cache)
+        df.attrs["source"] = "cache"
+        return df
 
     start_ms = int(pd.Timestamp(start, tz="UTC").timestamp() * 1000)
     end_ms = int(pd.Timestamp(end, tz="UTC").timestamp() * 1000)
@@ -142,10 +145,16 @@ def fetch_klines(
         if not rows:
             raise RuntimeError("Binance returned no rows")
         print(f"[data]   source: Binance")
+        source = "binance"
     except Exception as e:
+        if not allow_fallback:
+            raise RuntimeError(
+                f"Binance unavailable and source fallback is disabled: {e}"
+            ) from e
         print(f"[data]   Binance unavailable ({e}); trying Coinbase fallback...")
         rows = _download_coinbase(symbol, interval, start_ms, end_ms, step)
         print(f"[data]   source: Coinbase")
+        source = "coinbase"
 
     df = pd.DataFrame(rows, columns=_KLINE_COLS)
     df["timestamp"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
@@ -156,8 +165,30 @@ def fetch_klines(
     df = df.drop_duplicates(subset="timestamp").set_index("timestamp").sort_index()
 
     df.to_parquet(cache)
+    df.attrs["source"] = source
     print(f"[data] saved {len(df)} bars -> {cache.name}")
     return df
+
+
+def fetch_spot_ticker(symbol: str = "BTCUSDT") -> tuple[float, str]:
+    """Return an observed Binance spot price; never substitute another venue."""
+    session = requests.Session()
+    errors = []
+    for host in BINANCE_HOSTS:
+        try:
+            response = session.get(
+                host + "/api/v3/ticker/price",
+                params={"symbol": symbol},
+                timeout=8,
+                headers={"User-Agent": "btc-paper-suite"},
+            )
+            response.raise_for_status()
+            return float(response.json()["price"]), host
+        except Exception as exc:
+            errors.append(f"{host}: {type(exc).__name__}")
+    raise RuntimeError(
+        "Binance ticker unavailable; refusing stale paper fill: " + ", ".join(errors)
+    )
 
 
 if __name__ == "__main__":

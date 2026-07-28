@@ -22,15 +22,36 @@ const HELP =
   "/trades — your most recent paper trades\n" +
   "/price — LIVE BTC price vs the last daily snapshot\n" +
   "/health — is the daily run alive? (warns on a missed/stale run)\n" +
-  "/live — show live/paper mode  (owner: /live on CONFIRM · /live off)\n" +
+  "/live — live-trading status (disabled by audit)\n" +
   "/help — this message";
 
 const HELP_4H =
   "\n\nFixed MA250 4-hour paper bots:\n" +
   "/4hflat - 2x long / flat portfolio\n" +
   "/4hls - 2x long / 0.5x short portfolio\n" +
+  "/4hdual - spot dual-trend portfolio\n" +
   "/4hflattrades or /4hlstrades - recent trades\n" +
   "/4hhealth - scheduler health for both";
+
+const SUITE_HELP =
+  "\u{1F916} BTC four-strategy paper suite\n\n" +
+  "/all - compact status for all four strategies\n\n" +
+  "Daily spot ensemble\n" +
+  "/daily - portfolio and current target\n" +
+  "/daily_signal - seven trend votes\n" +
+  "/daily_stats - performance statistics\n" +
+  "/daily_trades - recent trades\n\n" +
+  "Four-hour strategies\n" +
+  "/dual4h - dual-trend spot portfolio\n" +
+  "/dual4h_trades - recent dual-trend trades\n" +
+  "/maflat - MA250 2x/flat portfolio\n" +
+  "/maflat_trades - recent 2x/flat trades\n" +
+  "/mashort - MA250 2x/-0.5x portfolio\n" +
+  "/mashort_trades - recent long/short trades\n\n" +
+  "/health - scheduler health\n" +
+  "/price - current BTC price\n" +
+  "/live - disabled; paper only\n" +
+  "/help - this message";
 
 const FLAG_PATH = "bot/live_flag.json";
 
@@ -89,30 +110,38 @@ async function ghFile(path, env) {
 }
 
 async function loadStatus(env) {
-  const txt = await ghFile("bot/status.json", env);
+  const txt = await ghFile("strategies/daily_spot_ensemble/runtime/status.json", env);
   return txt ? JSON.parse(txt) : null;
 }
 
 async function load4hStatus(variant, env) {
-  const txt = await ghFile(`bot/status_4h_${variant}.json`, env);
+  const pkg = variant === "long_flat"
+    ? "ma250_4h_long_flat"
+    : variant === "long_short"
+      ? "ma250_4h_long_short"
+      : "spot_4h_dual_trend";
+  const txt = await ghFile(`strategies/${pkg}/runtime/status.json`, env);
   return txt ? JSON.parse(txt) : null;
 }
 
 async function route(cmd, env) {
-  if (cmd === "portfolio" || cmd === "status") return replyPortfolio(await loadStatus(env));
-  if (cmd === "signal") return replySignal(await loadStatus(env));
-  if (cmd === "stats") return replyStats(await loadStatus(env), await ghFile("bot/trades.csv", env));
-  if (cmd === "trades") return replyTrades(env);
+  if (cmd === "all" || cmd === "status") return replyAll(env);
+  if (cmd === "daily" || cmd === "portfolio") return replyPortfolio(await loadStatus(env));
+  if (cmd === "daily_signal" || cmd === "signal") return replySignal(await loadStatus(env));
+  if (cmd === "daily_stats" || cmd === "stats") return replyStats(
+    await loadStatus(env),
+    await ghFile("strategies/daily_spot_ensemble/runtime/trades.csv", env));
+  if (cmd === "daily_trades" || cmd === "trades") return replyTrades(env);
   if (cmd === "price") return replyPrice(await loadStatus(env));
-  if (cmd === "health") return replyHealth(await loadStatus(env));
-  if (cmd === "4hflat") return reply4hPortfolio(await load4hStatus("long_flat", env));
-  if (cmd === "4hls") return reply4hPortfolio(await load4hStatus("long_short", env));
-  if (cmd === "4hflattrades") return reply4hTrades("long_flat", env);
-  if (cmd === "4hlstrades") return reply4hTrades("long_short", env);
-  if (cmd === "4hhealth") return reply4hHealth(
-    await load4hStatus("long_flat", env), await load4hStatus("long_short", env));
-  if (cmd === "help" || cmd === "start") return HELP + HELP_4H;
-  return `Unknown command /${cmd}.\n\n${HELP}${HELP_4H}`;
+  if (cmd === "health" || cmd === "4hhealth") return replySuiteHealth(env);
+  if (cmd === "maflat" || cmd === "4hflat") return reply4hPortfolio(await load4hStatus("long_flat", env));
+  if (cmd === "mashort" || cmd === "4hls") return reply4hPortfolio(await load4hStatus("long_short", env));
+  if (cmd === "dual4h" || cmd === "4hdual") return replyDualPortfolio(await load4hStatus("dual", env));
+  if (cmd === "maflat_trades" || cmd === "4hflattrades") return reply4hTrades("long_flat", env);
+  if (cmd === "mashort_trades" || cmd === "4hlstrades") return reply4hTrades("long_short", env);
+  if (cmd === "dual4h_trades") return reply4hTrades("dual", env);
+  if (cmd === "help" || cmd === "start") return SUITE_HELP;
+  return `Unknown command /${cmd}.\n\n${SUITE_HELP}`;
 }
 
 // --- /live : show mode; owner can toggle the repo flag that arms real trading. #
@@ -120,33 +149,7 @@ async function route(cmd, env) {
 // run still won't trade unless the COINDCX_LIVE_ARMED secret is ALSO set (the
 // second factor) — so a leaked bot token alone cannot start real trading.
 async function handleLive(parts, isOwner, env) {
-  const sub = (parts[1] || "").toLowerCase();
-
-  if (!sub) return await liveStatus(env);            // anyone may READ the mode
-  if (!isOwner) return "\u{26D4} Only the bot owner can change live mode.";
-
-  if (sub === "off") {
-    await setLive(false, env);
-    return "\u{1F6D1} LIVE turned OFF. The bot paper-trades on the next daily run (5:50 AM IST).";
-  }
-  if (sub === "on") {
-    if ((parts[2] || "") !== "CONFIRM") {
-      return (
-        "\u{26A0}\u{FE0F} This arms REAL-MONEY trading on CoinDCX.\n" +
-        "It takes effect on the NEXT daily run (5:50 AM IST), and ONLY if the " +
-        "COINDCX_LIVE_ARMED secret is set in the repo (second factor).\n\n" +
-        "To confirm, send exactly:\n/live on CONFIRM"
-      );
-    }
-    await setLive(true, env);
-    return (
-      "\u{2705} LIVE flag SET. Real orders will run at the next daily cycle " +
-      "(5:50 AM IST) IF COINDCX_LIVE_ARMED=1 is set in the repo.\n" +
-      "Per-order size is still capped by COINDCX_MAX_ORDER_QUOTE.\n" +
-      "Send /live to check · /live off to stop."
-    );
-  }
-  return "Usage:\n/live — show mode\n/live on CONFIRM — go live\n/live off — stop";
+  return "\u{1F6D1} Live trading is disabled by the 2026-07-28 audit. All four strategies are paper-only.";
 }
 
 async function liveStatus(env) {
@@ -182,6 +185,50 @@ function ghHeaders(env, accept) {
   };
 }
 
+async function replyAll(env) {
+  const [daily, dual, flat, short] = await Promise.all([
+    loadStatus(env),
+    load4hStatus("dual", env),
+    load4hStatus("long_flat", env),
+    load4hStatus("long_short", env),
+  ]);
+  const row = (name, r, exposure) => r
+    ? `${name}: $${fmt(r.total_equity_usd)} (${sign(r.total_return_pct)}%) | ${exposure(r)}`
+    : `${name}: no snapshot`;
+  return [
+    "\u{1F4CA} FOUR-STRATEGY PAPER SUITE",
+    row("Daily spot", daily, (r) => `${Number(r.current_exposure_pct).toFixed(0)}%`),
+    row("Dual 4h spot", dual, (r) => `${sign(r.actual_exposure)}x`),
+    row("MA250 flat", flat, (r) => `${sign(r.actual_exposure ?? r.target_exposure)}x`),
+    row("MA250 short", short, (r) => `${sign(r.actual_exposure ?? r.target_exposure)}x`),
+    "PAPER ONLY",
+  ].join("\n");
+}
+
+async function replySuiteHealth(env) {
+  const [daily, dual, flat, short] = await Promise.all([
+    loadStatus(env),
+    load4hStatus("dual", env),
+    load4hStatus("long_flat", env),
+    load4hStatus("long_short", env),
+  ]);
+  const age = (r) => r
+    ? (Date.now() - new Date(r.timestamp_utc).getTime()) / 3.6e6
+    : Infinity;
+  const line = (name, r, limit) => {
+    const hours = age(r);
+    const value = Number.isFinite(hours) ? `${hours.toFixed(1)}h ago` : "no snapshot";
+    return `${hours <= limit ? "\u{2705}" : "\u{1F534}"} ${name}: ${value}`;
+  };
+  return [
+    "\u{1FA7A} SCHEDULER HEALTH",
+    line("Daily spot", daily, 30),
+    line("Dual 4h spot", dual, 6),
+    line("MA250 flat", flat, 6),
+    line("MA250 short", short, 6),
+  ].join("\n");
+}
+
 function replyPortfolio(r) {
   if (!r) return "\u{1F4CA} No snapshot yet — the daily bot hasn't run. It'll appear after the first run.";
   return (
@@ -210,7 +257,7 @@ function replySignal(r) {
 }
 
 async function replyTrades(env) {
-  const csv = await ghFile("bot/trades.csv", env);
+  const csv = await ghFile("strategies/daily_spot_ensemble/runtime/trades.csv", env);
   if (!csv) return "\u{1F9FE} No paper trades yet — the bot has been flat (in cash).";
   const rows = csv.trim().split("\n");
   const header = rows[0].split(",");
@@ -334,7 +381,7 @@ function reply4hPortfolio(r) {
   return [
     `\u{23F1}\u{FE0F} ${r.variant === "long_flat" ? "Fixed 2x long / flat" : "Fixed 2x long / 0.5x short"}`,
     `Equity   : $${fmt(r.total_equity_usd)}  (${sign(r.total_return_pct)}%)`,
-    `Position : ${r.side} ${sign(r.target_exposure)}x`,
+    `Position : ${r.side} ${sign(r.actual_exposure ?? r.target_exposure)}x`,
     `BTC qty  : ${Number(r.btc_contract_qty).toFixed(6)}`,
     `BTC      : $${fmt(r.btc_price)}`,
     `Drawdown : ${sign(r.drawdown_pct)}%`,
@@ -344,8 +391,28 @@ function reply4hPortfolio(r) {
   ].join("\n");
 }
 
+function replyDualPortfolio(r) {
+  if (!r) return "\u{1F534} No four-hour dual-trend snapshot yet.";
+  return [
+    "\u{23F1}\u{FE0F} Spot 4h dual trend",
+    `Equity   : $${fmt(r.total_equity_usd)}  (${sign(r.total_return_pct)}%)`,
+    `Position : ${r.side} ${sign(r.actual_exposure)}x`,
+    `BTC      : $${fmt(r.btc_price)}`,
+    `Filters  : ${Object.values(r.conditions || {}).filter(Boolean).length}/3`,
+    `Drawdown : ${sign(r.drawdown_pct)}%`,
+    `Action   : ${r.action}`,
+    `Last bar : ${String(r.closed_bar_time).slice(0, 16).replace("T", " ")} UTC`,
+    "PAPER ONLY - no real orders.",
+  ].join("\n");
+}
+
 async function reply4hTrades(variant, env) {
-  const csv = await ghFile(`bot/trades_4h_${variant}.csv`, env);
+  const pkg = variant === "long_flat"
+    ? "ma250_4h_long_flat"
+    : variant === "long_short"
+      ? "ma250_4h_long_short"
+      : "spot_4h_dual_trend";
+  const csv = await ghFile(`strategies/${pkg}/runtime/trades.csv`, env);
   if (!csv) return "\u{1F4ED} No 4-hour paper trades yet.";
   const rows = csv.trim().split(/\r?\n/);
   if (rows.length < 2) return "\u{1F4ED} No 4-hour paper trades yet.";

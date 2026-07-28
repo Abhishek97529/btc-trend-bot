@@ -1,108 +1,63 @@
 name: paper-bot-daily
 
-# Runs the trend_ensemble paper bot once per day, just after the Binance daily
-# candle closes (00:00 UTC), then commits the updated state back to the repo so
-# the paper-trading position persists between runs. Mobile push notifications
-# fire from here too (via repo Secrets).
 on:
   schedule:
-    # 00:20 UTC daily — a safe margin after the 00:00 UTC daily bar close.
     - cron: "20 0 * * *"
   workflow_dispatch:
     inputs:
       test_notify:
-        description: "Send a TEST push (verify your phone gets it) instead of a real run"
+        description: "Send a test notification instead of running the strategy"
         type: boolean
         default: false
 
-# Needed so the workflow can push the updated state.json / trades.csv back.
 permissions:
   contents: write
 
 concurrency:
-  group: paper-bot
+  group: paper-bot-daily
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      # Configure whichever channel(s) you want as repo Secrets:
-      #   Settings -> Secrets and variables -> Actions -> New repository secret
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
-      NTFY_TOPIC:          ${{ secrets.NTFY_TOPIC }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      BOT_WEBHOOK_URL:     ${{ secrets.BOT_WEBHOOK_URL }}
-      # Set to "1" if you also want a daily HOLD heartbeat push.
+      BOT_WEBHOOK_URL: ${{ secrets.BOT_WEBHOOK_URL }}
       BOT_NOTIFY_HEARTBEAT: ${{ vars.BOT_NOTIFY_HEARTBEAT }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Send TEST notification (manual toggle only)
+      - run: pip install -r requirements.txt
+      - name: Send test notification
         if: ${{ inputs.test_notify }}
         run: python bot/notify.py
-
-      - name: Run bot (paper by default; LIVE only if flag ON and second factor set)
+      - name: Run daily paper strategy
         if: ${{ !inputs.test_notify }}
-        env:
-          # CoinDCX live-trading secrets (leave unset to stay paper forever).
-          COINDCX_KEY:             ${{ secrets.COINDCX_KEY }}
-          COINDCX_SECRET:          ${{ secrets.COINDCX_SECRET }}
-          # COINDCX_LIVE_ARMED is the SECOND FACTOR: even with the Telegram /live
-          # flag ON, no real order fires unless this secret equals "1".
-          COINDCX_LIVE_ARMED:      ${{ secrets.COINDCX_LIVE_ARMED }}
-          # Optional overrides (repo Variables): pair + per-order size cap.
-          COINDCX_MARKET:          ${{ vars.COINDCX_MARKET }}
-          COINDCX_MAX_ORDER_QUOTE: ${{ vars.COINDCX_MAX_ORDER_QUOTE }}
-        run: |
-          # bot/live_flag.json is written by the Telegram /live command (via the
-          # Cloudflare Worker). Live requires BOTH: flag.live == true AND the
-          # COINDCX_LIVE_ARMED second-factor secret == "1".
-          WANT=False
-          if [ -f bot/live_flag.json ]; then
-            WANT=$(python -c "import json;print(json.load(open('bot/live_flag.json')).get('live') is True)")
-          fi
-          if [ "$WANT" = "True" ] && [ "$COINDCX_LIVE_ARMED" = "1" ]; then
-            echo "::warning::LIVE MODE — flag ON + armed. Trading REAL money on CoinDCX."
-            python bot/paper_bot.py run --live
-          else
-            if [ "$WANT" = "True" ]; then
-              echo "::warning::Live flag is ON but COINDCX_LIVE_ARMED != 1 — staying PAPER (second factor missing)."
-            fi
-            python bot/paper_bot.py run
-          fi
-
-      - name: Commit updated state
+        run: python bot/paper_bot.py run
+      - name: Commit daily paper state
         if: ${{ !inputs.test_notify }}
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Only add files that exist. trades.csv is absent until the FIRST trade
-          # (the bot may sit flat/HOLD for a long time), so adding it blindly under
-          # `bash -e` would abort the step with "pathspec did not match any files".
-          for f in bot/state.json bot/status.json bot/trades.csv bot/live_state.json; do
+          PKG=strategies/daily_spot_ensemble/runtime
+          for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv"; do
             [ -f "$f" ] && git add "$f"
           done
           if git diff --cached --quiet; then
-            echo "No state change — nothing to commit."
+            echo "No state change."
           else
-            git commit -m "paper-bot: update state [skip ci]"
-            # Push with a rebase-retry loop in case a telegram-commands run pushed
-            # an offset update in the meantime.
+            git commit -m "paper-bot-daily: update state [skip ci]"
+            pushed=0
             for i in 1 2 3; do
-              git pull --rebase origin main && git push && break
+              if git pull --rebase origin main && git push; then pushed=1; break; fi
               echo "push attempt $i failed; retrying..."
               sleep 3
             done
+            [ "$pushed" = "1" ] || { echo "::error::state push failed"; exit 1; }
           fi

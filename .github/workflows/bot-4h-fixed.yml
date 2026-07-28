@@ -1,4 +1,4 @@
-name: paper-bots-4h-fixed
+name: paper-bots-4h-ma250
 
 on:
   schedule:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: paper-bots-4h-fixed
+  group: paper-bots-4h-ma250
   cancel-in-progress: false
 
 jobs:
@@ -34,21 +34,28 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Run fixed 4h paper bot
+      - name: Run MA250 paper strategy
         run: python bot/paper_4h_bot.py run
-      - name: Commit fixed 4h paper state
+      - name: Commit MA250 paper state
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          for f in bot/state_4h_${FIXED_4H_VARIANT}.json bot/status_4h_${FIXED_4H_VARIANT}.json bot/trades_4h_${FIXED_4H_VARIANT}.csv; do
+          if [ "$FIXED_4H_VARIANT" = "long_flat" ]; then
+            PKG=strategies/ma250_4h_long_flat/runtime
+          else
+            PKG=strategies/ma250_4h_long_short/runtime
+          fi
+          for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv"; do
             [ -f "$f" ] && git add "$f"
           done
           if git diff --cached --quiet; then
             echo "No state change."
           else
-            git commit -m "paper-bot-4h-${FIXED_4H_VARIANT}: update state [skip ci]"
+            git commit -m "paper-bot-ma250-${FIXED_4H_VARIANT}: update state [skip ci]"
+            pushed=0
             for i in 1 2 3 4 5; do
-              git pull --rebase origin main && git push && break
+              if git pull --rebase origin main && git push; then pushed=1; break; fi
               sleep $((i * 3))
             done
+            [ "$pushed" = "1" ] || { echo "::error::state push failed"; exit 1; }
           fi

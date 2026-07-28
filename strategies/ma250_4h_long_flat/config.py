@@ -1,0 +1,17 @@
+"""Frozen configuration for MA250 +2x long / flat."""
+
+SLUG = "fixed_2x_long_flat_4h"
+VARIANT = "long_flat"
+SYMBOL = "BTCUSDT"
+MARKET = "perpetual"
+TIMEFRAME = "4h"
+TIMEZONE = "UTC"
+MA_BARS = 250
+LONG_EXPOSURE = 2.0
+SHORT_EXPOSURE = 0.0
+FEE = 0.0004
+SLIPPAGE = 0.0003
+MAINTENANCE_MARGIN = 0.005
+INITIAL_CAPITAL = 10_000.0
+MAX_GAP_BARS = 1
+LIVE_TRADING_APPROVED = False

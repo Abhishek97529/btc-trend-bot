@@ -1,68 +1,61 @@
-# BTC/USDT Trend-Ensemble Trading Bot
+# BTC systematic-strategy suite
 
-A research-first crypto trading project. We designed candidate strategies, backtested
-and forward-tested them honestly against buy-and-hold, validated the survivor with a
-full robustness battery, and wrapped it in a **paper-trading bot**.
+This repository contains four frozen BTC strategies, their independent paper
+accounts, shared execution code, and reproducible research. All four are
+paper-only. Historical performance is evidence for further testing, not a
+promise of future profit.
 
-> **Honest headline:** over a full market cycle (incl. the 2022 bear), the
-> `trend_ensemble` strategy beats buy-and-hold on return, Sharpe, *and* drawdown.
-> Its edge is **crash avoidance** — it will *lag* during sustained bull runs. It is
-> not a get-rich-quick machine. All results are net of 0.10% fee + 5 bps slippage
-> per side and are out-of-sample.
+| Strategy | Market | Audited return | CAGR | Sharpe | Max DD | Orders |
+|---|---|---:|---:|---:|---:|---:|
+| Daily seven-vote ensemble | Spot, 1d | +2,047.6% | 45.7% | 1.14 | -38.3% | 266 |
+| Dual trend | Spot, 4h | +3,898.4% | 62.8% | 1.43 | -46.5% | 351 |
+| MA250 +2x/flat | Perpetual, 4h | +4,971.6% | 76.9% | 1.17 | -63.9% | 315 |
+| MA250 +2x/-0.5x | Perpetual, 4h | +6,981.5% | 85.7% | 1.23 | -57.4% | 316 |
 
-## Results (validation battery, fixed params, no tuning, 2018→2026)
+The samples are not identical: perpetual history starts in September 2019.
+Leveraged returns are not directly comparable with spot returns, and both
+leveraged strategies have historically severe tail risk.
 
-|                | Total Return | CAGR  | Sharpe | Max Drawdown |
-|----------------|-------------:|------:|-------:|-------------:|
-| trend_ensemble |      +2,326% | 47.9% |  1.18  |        −38%  |
-| Buy & Hold     |        +761% | 30.2% |  0.74  |        −77%  |
+## Repository layout
 
-Survived: parameter sweeps, ±30% window perturbation, 5× costs, +3-day execution
-lag, and a 2,000-path block-bootstrap (89% chance of beating buy-and-hold's Sharpe).
-
-## The strategy: `trend_ensemble`
-Votes across 7 fixed-length trend signals (50/100/200-day SMAs, 20/50 & 50/100 EMA
-crossovers, 55-day Donchian breakout, 90-day momentum) and sizes exposure by the
-fraction that agree. Long/flat, spot-deployable, one coarse knob (threshold=0.5).
-
-## Layout
-```
-src/
-  data_fetch.py     Binance public klines downloader (+ corporate-proxy SSL fix)
-  indicators.py     causal technical indicators
-  strategies.py     round-1 hourly strategies
-  strategies_v2.py  round-2 daily strategies (the ensemble lives here)
-  backtest.py       vectorized, no-lookahead engine w/ fees, slippage, shorting
-  metrics.py        Sharpe, Sortino, maxDD, Calmar, rolling returns
-  research.py       round-1 hourly study
-  research_v2.py    round-2 daily study (train/test + walk-forward)
-  validate.py       robustness battery
-bot/
-  paper_bot.py      paper-trading bot (no keys, no real money)
-reports/            generated tables + equity-curve charts
-data/               cached parquet price data
+```text
+strategies/  frozen config, operating notes, and isolated runtime per strategy
+bot/         shared paper runners, exchange adapters, notifications, persistence
+src/         research, backtests, audits, and compatibility imports
+reports/     generated audit tables and evidence
+.github/     one daily and two four-hour paper workflows
+worker/      read-only Telegram status interface
 ```
 
-## Setup
+Start with [strategies/README.md](strategies/README.md) and
+[the deployment audit](docs/audits/FOUR_STRATEGY_DEPLOYMENT_AUDIT.md).
+
+## Paper commands
+
 ```bash
 pip install -r requirements.txt
+python bot/paper_bot.py status
+python bot/paper_bot.py run --dry-run
+python bot/paper_dual_4h_bot.py status
+python bot/paper_dual_4h_bot.py run --dry-run
 ```
-Behind a corporate TLS proxy? `truststore` (already imported in `data_fetch.py`)
-routes Python through the Windows certificate store — no extra config needed.
 
-## Usage
-```bash
-python src/research_v2.py     # reproduce the daily study + charts
-python src/validate.py        # reproduce the robustness battery
-python bot/paper_bot.py reset # start a fresh $10k paper portfolio
-python bot/paper_bot.py run   # compute today's signal, rebalance (once/day)
-python bot/paper_bot.py status# portfolio + latest signal
-```
-Run `bot/paper_bot.py run` once daily, a few minutes after 00:00 UTC (Task Scheduler
-or `loop`). It acts only on the last *closed* daily bar.
+For the MA250 runner, set `FIXED_4H_VARIANT` to `long_flat` or `long_short`.
 
-## ⚠️ Risk notes
-- Past performance ≠ future results. Crypto is highly volatile; you can lose money.
-- The edge is drawdown-avoidance; expect to underperform BTC in strong bull markets.
-- Live trading is **not** wired yet — this is paper only. Paper-test for weeks before
-  ever risking real capital, and start tiny.
+## Telegram
+
+The read-only Telegram interface is documented in
+[worker/README.md](worker/README.md). `/all` provides the four-account
+dashboard; each strategy also has clearly named portfolio and trade commands.
+
+## Safety contract
+
+- Live trading is disabled in configuration, workflows, and Telegram.
+- Runners fail closed if their required venue or fresh candle is unavailable.
+- Every strategy owns separate state, status, and deduplicated trade records.
+- Writes are atomic; failed workflow pushes fail visibly.
+- Restarted four-hour accounts retain old records under `archive/`.
+
+Do not enable real orders from historical results alone. Measure actual costs,
+reconcile fills by exchange order ID, add exchange-side idempotency, and collect
+at least 12 months of prospective paper evidence.
