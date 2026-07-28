@@ -1,9 +1,9 @@
 {
-  "cash": 10000.0,
-  "btc": 0.0,
+  "cash": 0.0,
+  "btc": 0.1580521820538688,
   "initial_capital": 10000.0,
   "peak_equity": 10000.0,
-  "last_bar": null,
-  "last_target": 0,
-  "runs": 0
+  "last_bar": "2026-07-28 08:00:00+00:00",
+  "last_target": 1,
+  "runs": 1
 }
