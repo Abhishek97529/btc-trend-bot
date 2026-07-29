@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
+from urllib.parse import urlparse
 from pathlib import Path
 
 import numpy as np
@@ -41,6 +43,8 @@ STATE = RUNTIME / "state.json"
 STATUS = RUNTIME / "status.json"
 TRADES = RUNTIME / "trades.csv"
 TIMEFRAME = pd.Timedelta(hours=4)
+FAPI_ORIGIN = "https://fapi.binance.com"
+FAPI_PROXY_URL = os.getenv("FAPI_PROXY_URL", "").strip().rstrip("/")
 
 
 def default_state() -> dict:
@@ -59,11 +63,23 @@ def default_state() -> dict:
 
 
 def get_json(url: str, params: dict):
+    headers = {"User-Agent": "btc-4h-paper-suite"}
+    request_url = url
+    if FAPI_PROXY_URL and url.startswith(FAPI_ORIGIN + "/"):
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        if not bot_token:
+            raise RuntimeError(
+                "FAPI_PROXY_URL requires TELEGRAM_BOT_TOKEN for relay authentication"
+            )
+        path = urlparse(url).path
+        request_url = FAPI_PROXY_URL + "/market-data" + path
+        relay_token = hashlib.sha256(bot_token.encode("utf-8")).hexdigest()
+        headers["Authorization"] = f"Bearer {relay_token}"
     response = requests.get(
-        url,
+        request_url,
         params=params,
         timeout=15,
-        headers={"User-Agent": "btc-4h-paper-suite"},
+        headers=headers,
     )
     response.raise_for_status()
     return response.json()

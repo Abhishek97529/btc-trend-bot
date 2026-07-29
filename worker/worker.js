@@ -64,6 +64,10 @@ const SUITE_HELP =
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname.startsWith("/market-data/")) {
+      return relayFuturesMarketData(request, env, url);
+    }
     if (request.method !== "POST") return new Response("ok");
 
     // Only accept requests Telegram signed with our secret header.
@@ -100,6 +104,70 @@ export default {
     return new Response("ok");
   },
 };
+
+const FUTURES_PATHS = new Set([
+  "/fapi/v1/klines",
+  "/fapi/v1/markPriceKlines",
+  "/fapi/v1/fundingRate",
+]);
+
+async function relayFuturesMarketData(request, env, url) {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    return new Response("relay unavailable", { status: 503 });
+  }
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(env.TELEGRAM_BOT_TOKEN),
+  );
+  const expected = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  if (request.headers.get("Authorization") !== `Bearer ${expected}`) {
+    return new Response("forbidden", { status: 403 });
+  }
+
+  const upstreamPath = url.pathname.slice("/market-data".length);
+  if (!FUTURES_PATHS.has(upstreamPath)) {
+    return new Response("unsupported endpoint", { status: 404 });
+  }
+  if (url.searchParams.get("symbol") !== "BTCUSDT") {
+    return new Response("unsupported symbol", { status: 400 });
+  }
+
+  const permitted = upstreamPath === "/fapi/v1/fundingRate"
+    ? new Set(["symbol", "startTime", "endTime", "limit"])
+    : new Set(["symbol", "interval", "limit"]);
+  for (const key of url.searchParams.keys()) {
+    if (!permitted.has(key)) return new Response("unsupported parameter", { status: 400 });
+  }
+  if (upstreamPath !== "/fapi/v1/fundingRate" &&
+      url.searchParams.get("interval") !== "4h") {
+    return new Response("unsupported interval", { status: 400 });
+  }
+  const limit = Number(url.searchParams.get("limit") || 0);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1500) {
+    return new Response("invalid limit", { status: 400 });
+  }
+  for (const key of ["startTime", "endTime"]) {
+    const value = url.searchParams.get(key);
+    if (value !== null && !/^\d{10,16}$/.test(value)) {
+      return new Response(`invalid ${key}`, { status: 400 });
+    }
+  }
+
+  const upstream = new URL(`https://fapi.binance.com${upstreamPath}`);
+  upstream.search = url.search;
+  const response = await fetch(upstream, {
+    headers: { "User-Agent": "btc-4h-paper-suite-relay" },
+  });
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      "Content-Type": response.headers.get("Content-Type") || "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
 
 async function ghFile(path, env) {
   const r = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`, {
