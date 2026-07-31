@@ -1,28 +1,28 @@
 {
   "strategy": "spot_4h_dual_trend",
   "variant": "dual_trend",
-  "timestamp_utc": "2026-07-31T14:32:10.761591+00:00",
-  "closed_bar_time": "2026-07-31T08:00:00+00:00",
-  "closed_bar_date": "2026-07-31 08:00:00+00:00",
-  "run_number": 19,
+  "timestamp_utc": "2026-07-31T17:51:08.194541+00:00",
+  "closed_bar_time": "2026-07-31T12:00:00+00:00",
+  "closed_bar_date": "2026-07-31 12:00:00+00:00",
+  "run_number": 20,
   "dry_run": false,
   "action": "HOLD",
   "side": "FLAT",
   "data_source": "https://data-api.binance.vision",
   "execution_source": "https://data-api.binance.vision/ticker-in-current-kline",
-  "btc_price": 62670.09,
-  "closed_price": 63805.51,
+  "btc_price": 63157.3,
+  "closed_price": 62716.57,
   "target_exposure": 0,
   "actual_exposure": 0.0,
   "conditions": {
-    "ema_trend": true,
+    "ema_trend": false,
     "momentum": false,
-    "sma_regime": true
+    "sma_regime": false
   },
-  "ema_fast": 64291.38,
-  "ema_slow": 64241.58,
-  "momentum": -0.006114,
-  "trend_sma": 63411.31,
+  "ema_fast": 64165.39,
+  "ema_slow": 64224.01,
+  "momentum": -0.022737,
+  "trend_sma": 63411.2,
   "btc_units_traded": 0.0,
   "trade_value_usd": 0.0,
   "cost_usd": 0.0,
@@ -32,5 +32,5 @@
   "total_return_pct": -0.67,
   "drawdown_pct": -2.76,
   "gap_bars_processed": 1,
-  "summary": "HOLD cash; conditions 2/3; BTC $62,670; equity $9,933.16."
+  "summary": "HOLD cash; conditions 0/3; BTC $63,157; equity $9,933.16."
 }
