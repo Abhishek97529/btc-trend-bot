@@ -43,6 +43,20 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: Wait for production Futures relay
+        run: |
+          for i in $(seq 1 30); do
+            health="$(curl --fail --silent --show-error \
+              https://btc-trend-bot.abhishektiwari328.workers.dev/market-data-health || true)"
+            if echo "$health" | grep -q '"market_data_backend":"bybit-linear-v1"'; then
+              echo "Bybit perpetual relay is ready."
+              exit 0
+            fi
+            echo "Relay deployment not ready (attempt $i/30)."
+            sleep 10
+          done
+          echo "::error::production Futures relay did not reach bybit-linear-v1"
+          exit 1
       - name: Run MA250 paper strategy
         run: python bot/paper_4h_bot.py run
       - name: Commit MA250 paper state

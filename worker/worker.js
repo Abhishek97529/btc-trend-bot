@@ -124,7 +124,11 @@ async function futuresRelayHealth() {
     statuses.bybit = bybit.status;
     statuses.okx = okx.status;
     const healthy = Object.values(statuses).some((status) => status === 200);
-    return Response.json({ relay: "ok", upstream_statuses: statuses }, {
+    return Response.json({
+      relay: "ok",
+      market_data_backend: "bybit-linear-v1",
+      upstream_statuses: statuses,
+    }, {
       status: healthy ? 200 : 502,
       headers: { "Cache-Control": "no-store" },
     });
