@@ -44,6 +44,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Wait for production Futures relay
+        # Prevent CI from racing Cloudflare's asynchronous production rollout.
         run: |
           for i in $(seq 1 30); do
             health="$(curl --fail --silent --show-error \
