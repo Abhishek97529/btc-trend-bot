@@ -186,18 +186,52 @@ async function relayFuturesMarketData(request, env, url) {
     }
   }
 
-  const upstream = new URL(`https://fapi.binance.com${upstreamPath}`);
-  upstream.search = url.search;
-  const response = await fetch(upstream, {
-    headers: { "User-Agent": "btc-4h-paper-suite-relay" },
-  });
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      "Content-Type": response.headers.get("Content-Type") || "application/json",
-      "Cache-Control": "no-store",
-    },
-  });
+  const upstream = new URL("https://api.bybit.com");
+  if (upstreamPath === "/fapi/v1/fundingRate") {
+    upstream.pathname = "/v5/market/funding/history";
+    upstream.searchParams.set("category", "linear");
+    upstream.searchParams.set("symbol", "BTCUSDT");
+    upstream.searchParams.set("limit", String(Math.min(limit, 200)));
+    for (const [source, target] of [["startTime", "startTime"], ["endTime", "endTime"]]) {
+      const value = url.searchParams.get(source);
+      if (value !== null) upstream.searchParams.set(target, value);
+    }
+  } else {
+    upstream.pathname = upstreamPath === "/fapi/v1/klines"
+      ? "/v5/market/kline"
+      : "/v5/market/mark-price-kline";
+    upstream.searchParams.set("category", "linear");
+    upstream.searchParams.set("symbol", "BTCUSDT");
+    upstream.searchParams.set("interval", "240");
+    upstream.searchParams.set("limit", String(Math.min(limit, 1000)));
+  }
+  const response = await fetch(upstream);
+  if (!response.ok) {
+    return Response.json({ error: `Bybit HTTP ${response.status}` }, { status: 502 });
+  }
+  const payload = await response.json();
+  if (payload.retCode !== 0) {
+    return Response.json({ error: `Bybit ${payload.retCode}: ${payload.retMsg}` }, { status: 502 });
+  }
+
+  let result;
+  if (upstreamPath === "/fapi/v1/fundingRate") {
+    result = payload.result.list.map((row) => ({
+      symbol: row.symbol,
+      fundingTime: Number(row.fundingRateTimestamp),
+      fundingRate: row.fundingRate,
+    })).reverse();
+  } else {
+    const isTrade = upstreamPath === "/fapi/v1/klines";
+    result = payload.result.list.map((row) => {
+      const openTime = Number(row[0]);
+      return [
+        openTime, row[1], row[2], row[3], row[4], isTrade ? row[5] : "0",
+        openTime + 14_400_000 - 1, isTrade ? row[6] : "0", 0, "0", "0", "0",
+      ];
+    }).reverse();
+  }
+  return Response.json(result, { headers: { "Cache-Control": "no-store" } });
 }
 
 async function ghFile(path, env) {

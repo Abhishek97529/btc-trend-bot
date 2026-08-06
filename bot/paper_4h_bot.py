@@ -289,8 +289,13 @@ def run(dry: bool = False) -> dict | None:
         "dry_run": dry,
         "action": action,
         "side": "LONG" if state["qty"] > 0 else ("SHORT" if state["qty"] < 0 else "FLAT"),
-        "data_source": "binance_perpetual_and_mark",
-        "funding_source": "real_binance",
+        "data_source": (
+            "bybit_linear_perpetual_and_mark_via_cloudflare"
+            if FAPI_PROXY_URL else "binance_perpetual_and_mark"
+        ),
+        "funding_source": (
+            "real_bybit" if FAPI_PROXY_URL else "real_binance"
+        ),
         "btc_price": round(price, 2),
         "closed_price": round(sig["close"], 2),
         "sma250": round(sig["sma250"], 2),
