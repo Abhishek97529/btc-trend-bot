@@ -9,8 +9,12 @@ on:
     paths:
       - "bot/paper_dual_4h_bot.py"
       - "bot/paper_shadow_4h_bot.py"
+      - "bot/paper_4h_bot.py"
       - "strategies/spot_4h_dual_trend/config.py"
       - "strategies/spot_4h_dual_trend_shadow/config.py"
+      - "strategies/ma250_4h_long_flat/config.py"
+      - "strategies/ma250_4h_long_short/config.py"
+      - "worker/worker.js"
       - ".github/workflows/bot-4h-dual-spot.yml"
 
 permissions:
@@ -30,6 +34,7 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       BOT_WEBHOOK_URL: ${{ secrets.BOT_WEBHOOK_URL }}
       BOT_NOTIFY_HEARTBEAT: ${{ vars.BOT_NOTIFY_HEARTBEAT }}
+      FAPI_PROXY_URL: https://btc-trend-bot.abhishektiwari328.workers.dev
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,13 +46,28 @@ jobs:
         run: python bot/paper_dual_4h_bot.py run
       - name: Run shadow challenger paper strategy
         run: python bot/paper_shadow_4h_bot.py run
-      - name: Commit 4H spot paper states
+      - name: Verify production Futures relay
+        run: |
+          health="$(curl --fail --silent --show-error \
+            https://btc-trend-bot.abhishektiwari328.workers.dev/market-data-health)"
+          echo "$health" | grep -q '"market_data_backend":"bybit-linear-v2-public-bounded"'
+      - name: Run MA250 long-flat paper strategy
+        env:
+          FIXED_4H_VARIANT: long_flat
+        run: python bot/paper_4h_bot.py run
+      - name: Run MA250 long-short paper strategy
+        env:
+          FIXED_4H_VARIANT: long_short
+        run: python bot/paper_4h_bot.py run
+      - name: Commit complete 4H paper suite state
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           for PKG in \
             strategies/spot_4h_dual_trend/runtime \
-            strategies/spot_4h_dual_trend_shadow/runtime; do
+            strategies/spot_4h_dual_trend_shadow/runtime \
+            strategies/ma250_4h_long_flat/runtime \
+            strategies/ma250_4h_long_short/runtime; do
             for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv"; do
               [ -f "$f" ] && git add "$f"
             done
@@ -55,7 +75,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No state change."
           else
-            git commit -m "paper-bot-4h-spot-suite: update state [skip ci]"
+            git commit -m "paper-bot-4h-suite: update state [skip ci]"
             pushed=0
             for i in 1 2 3 4 5; do
               if git pull --rebase origin main && git push; then pushed=1; break; fi
