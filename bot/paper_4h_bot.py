@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -66,15 +65,8 @@ def get_json(url: str, params: dict):
     headers = {"User-Agent": "btc-4h-paper-suite"}
     request_url = url
     if FAPI_PROXY_URL and url.startswith(FAPI_ORIGIN + "/"):
-        bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-        if not bot_token:
-            raise RuntimeError(
-                "FAPI_PROXY_URL requires TELEGRAM_BOT_TOKEN for relay authentication"
-            )
         path = urlparse(url).path
         request_url = FAPI_PROXY_URL + "/market-data" + path
-        relay_token = hashlib.sha256(bot_token.encode("utf-8")).hexdigest()
-        headers["Authorization"] = f"Bearer {relay_token}"
     response = requests.get(
         request_url,
         params=params,

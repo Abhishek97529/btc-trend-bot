@@ -126,7 +126,7 @@ async function futuresRelayHealth() {
     const healthy = Object.values(statuses).some((status) => status === 200);
     return Response.json({
       relay: "ok",
-      market_data_backend: "bybit-linear-v1",
+      market_data_backend: "bybit-linear-v2-public-bounded",
       upstream_statuses: statuses,
     }, {
       status: healthy ? 200 : 502,
@@ -147,20 +147,6 @@ const FUTURES_PATHS = new Set([
 ]);
 
 async function relayFuturesMarketData(request, env, url) {
-  if (!env.TELEGRAM_BOT_TOKEN) {
-    return new Response("relay unavailable", { status: 503 });
-  }
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(env.TELEGRAM_BOT_TOKEN),
-  );
-  const expected = Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-  if (request.headers.get("Authorization") !== `Bearer ${expected}`) {
-    return new Response("forbidden", { status: 403 });
-  }
-
   const upstreamPath = url.pathname.slice("/market-data".length);
   if (!FUTURES_PATHS.has(upstreamPath)) {
     return new Response("unsupported endpoint", { status: 404 });
@@ -208,6 +194,15 @@ async function relayFuturesMarketData(request, env, url) {
     upstream.searchParams.set("symbol", "BTCUSDT");
     upstream.searchParams.set("interval", "240");
     upstream.searchParams.set("limit", String(Math.min(limit, 1000)));
+  }
+  if (upstreamPath === "/fapi/v1/fundingRate") {
+    const start = Number(url.searchParams.get("startTime"));
+    const end = Number(url.searchParams.get("endTime"));
+    const now = Date.now();
+    if (!start || !end || end < start || start < now - 14 * 86_400_000 ||
+        end > now + 300_000) {
+      return new Response("funding window must be within the latest 14 days", { status: 400 });
+    }
   }
   const response = await fetch(upstream);
   if (!response.ok) {
