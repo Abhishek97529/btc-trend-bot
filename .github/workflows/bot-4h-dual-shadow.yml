@@ -1,8 +1,6 @@
 name: paper-bot-4h-dual-shadow
 
 on:
-  schedule:
-    - cron: "25 0,4,8,12,16,20 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

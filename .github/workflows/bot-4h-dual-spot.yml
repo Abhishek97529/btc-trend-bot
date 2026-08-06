@@ -31,18 +31,23 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run dual-trend spot paper strategy
         run: python bot/paper_dual_4h_bot.py run
-      - name: Commit dual-trend paper state
+      - name: Run shadow challenger paper strategy
+        run: python bot/paper_shadow_4h_bot.py run
+      - name: Commit 4H spot paper states
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          PKG=strategies/spot_4h_dual_trend/runtime
-          for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv"; do
-            [ -f "$f" ] && git add "$f"
+          for PKG in \
+            strategies/spot_4h_dual_trend/runtime \
+            strategies/spot_4h_dual_trend_shadow/runtime; do
+            for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv"; do
+              [ -f "$f" ] && git add "$f"
+            done
           done
           if git diff --cached --quiet; then
             echo "No state change."
           else
-            git commit -m "paper-bot-4h-dual-spot: update state [skip ci]"
+            git commit -m "paper-bot-4h-spot-suite: update state [skip ci]"
             pushed=0
             for i in 1 2 3 4 5; do
               if git pull --rebase origin main && git push; then pushed=1; break; fi
