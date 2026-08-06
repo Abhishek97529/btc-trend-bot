@@ -117,6 +117,12 @@ async function futuresRelayHealth() {
       );
       return [host, response.status];
     })));
+    const [bybit, okx] = await Promise.all([
+      fetch("https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=240&limit=1"),
+      fetch("https://www.okx.com/api/v5/market/candles?instId=BTC-USDT-SWAP&bar=4H&limit=1"),
+    ]);
+    statuses.bybit = bybit.status;
+    statuses.okx = okx.status;
     const healthy = Object.values(statuses).some((status) => status === 200);
     return Response.json({ relay: "ok", upstream_statuses: statuses }, {
       status: healthy ? 200 : 502,
