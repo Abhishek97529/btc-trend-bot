@@ -110,12 +110,16 @@ export default {
 
 async function futuresRelayHealth() {
   try {
-    const upstream = await fetch(
-      "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=4h&limit=1",
-      { headers: { "User-Agent": "btc-4h-paper-suite-relay-health" } },
-    );
-    return Response.json({ relay: "ok", upstream_status: upstream.status }, {
-      status: upstream.ok ? 200 : 502,
+    const hosts = ["fapi", "fapi1", "fapi2", "fapi3", "fapi4"];
+    const statuses = Object.fromEntries(await Promise.all(hosts.map(async (host) => {
+      const response = await fetch(
+        `https://${host}.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=4h&limit=1`,
+      );
+      return [host, response.status];
+    })));
+    const healthy = Object.values(statuses).some((status) => status === 200);
+    return Response.json({ relay: "ok", upstream_statuses: statuses }, {
+      status: healthy ? 200 : 502,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
