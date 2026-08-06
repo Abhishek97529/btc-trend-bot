@@ -65,6 +65,9 @@ const SUITE_HELP =
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/market-data-health") {
+      return futuresRelayHealth();
+    }
     if (request.method === "GET" && url.pathname.startsWith("/market-data/")) {
       return relayFuturesMarketData(request, env, url);
     }
@@ -104,6 +107,24 @@ export default {
     return new Response("ok");
   },
 };
+
+async function futuresRelayHealth() {
+  try {
+    const upstream = await fetch(
+      "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=4h&limit=1",
+      { headers: { "User-Agent": "btc-4h-paper-suite-relay-health" } },
+    );
+    return Response.json({ relay: "ok", upstream_status: upstream.status }, {
+      status: upstream.ok ? 200 : 502,
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    return Response.json({ relay: "error", error: error.name }, {
+      status: 502,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+}
 
 const FUTURES_PATHS = new Set([
   "/fapi/v1/klines",
