@@ -4,6 +4,14 @@ on:
   schedule:
     - cron: "10 0,4,8,12,16,20 * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "bot/paper_4h_bot.py"
+      - "worker/worker.js"
+      - "strategies/ma250_4h_long_flat/config.py"
+      - "strategies/ma250_4h_long_short/config.py"
+      - ".github/workflows/bot-4h-fixed.yml"
 
 permissions:
   contents: write
