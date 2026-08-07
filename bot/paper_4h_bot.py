@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -67,14 +68,27 @@ def get_json(url: str, params: dict):
     if FAPI_PROXY_URL and url.startswith(FAPI_ORIGIN + "/"):
         path = urlparse(url).path
         request_url = FAPI_PROXY_URL + "/market-data" + path
-    response = requests.get(
-        request_url,
-        params=params,
-        timeout=15,
-        headers=headers,
-    )
-    response.raise_for_status()
-    return response.json()
+    for attempt in range(5):
+        try:
+            response = requests.get(
+                request_url,
+                params=params,
+                timeout=20,
+                headers=headers,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as exc:
+            status = getattr(exc.response, "status_code", None)
+            transient = status is None or status in (408, 425, 429) or status >= 500
+            if not transient or attempt == 4:
+                raise
+            delay = min(2 ** attempt, 8)
+            print(
+                f"[market-data] transient HTTP {status or 'network'}; "
+                f"retry {attempt + 2}/5 in {delay}s"
+            )
+            time.sleep(delay)
 
 
 def parse_klines(rows) -> pd.DataFrame:

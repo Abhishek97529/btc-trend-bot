@@ -204,7 +204,14 @@ async function relayFuturesMarketData(request, env, url) {
       return new Response("funding window must be within the latest 14 days", { status: 400 });
     }
   }
-  const response = await fetch(upstream);
+  let response;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    response = await fetch(upstream);
+    if (response.ok || (response.status < 500 && response.status !== 429)) break;
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** attempt)));
+    }
+  }
   if (!response.ok) {
     return Response.json({ error: `Bybit HTTP ${response.status}` }, { status: 502 });
   }
