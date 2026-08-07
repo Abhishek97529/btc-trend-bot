@@ -228,8 +228,10 @@ def run(dry: bool = False) -> dict | None:
     if state.get("liquidated"):
         raise RuntimeError("paper account is liquidated; archive and reset it explicitly")
 
+    late_recovery = os.getenv("PAPER_LATE_RECOVERY") == "1"
     bar_status = require_new_bar(
-        state.get("last_bar"), sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS
+        state.get("last_bar"), sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS,
+        allow_late_recovery=late_recovery,
     )
     if bar_status == 0:
         print(f"[4h] already processed {sig['bar_time']}")
@@ -308,6 +310,7 @@ def run(dry: bool = False) -> dict | None:
         "drawdown_pct": round((eq_after / state["peak_equity"] - 1) * 100, 2),
         "liquidated": state.get("liquidated", False),
         "gap_bars_processed": bar_status,
+        "late_recovery": bool(late_recovery and bar_status > 1),
     }
     report["summary"] = (
         f"{action} {report['side']} target {sig['target_exposure']:+.2f}x "

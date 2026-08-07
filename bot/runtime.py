@@ -44,7 +44,8 @@ def append_csv_dedup(path: Path, row: dict, unique_columns: tuple[str, ...]) -> 
 
 
 def require_new_bar(last_bar: str | None, new_bar, timeframe: pd.Timedelta,
-                    max_gap_bars: int = 1) -> int:
+                    max_gap_bars: int = 1,
+                    allow_late_recovery: bool = False) -> int:
     if last_bar is None:
         return 1
     previous = pd.Timestamp(last_bar)
@@ -55,7 +56,7 @@ def require_new_bar(last_bar: str | None, new_bar, timeframe: pd.Timedelta,
         raise RuntimeError(f"refusing non-monotonic bar: state={previous}, data={current}")
     gap = current - previous
     bars = int(gap / timeframe)
-    if gap != bars * timeframe or bars > max_gap_bars:
+    if gap != bars * timeframe or (bars > max_gap_bars and not allow_late_recovery):
         raise RuntimeError(
             f"refusing unreconciled gap: state={previous}, data={current}, "
             f"gap={bars} bars (allowed {max_gap_bars})"

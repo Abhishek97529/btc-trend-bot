@@ -229,6 +229,7 @@ def run(dry: bool = False) -> dict | None:
     closed, price, theoretical_open, fill_latency, source, now = market_data()
     sig = signal(closed)
     state = load_json(STATE, default_state())
+    late_recovery = os.getenv("PAPER_LATE_RECOVERY") == "1"
     reconciled_bars = 0
     if state.get("last_bar") is not None:
         previous = pd.Timestamp(state["last_bar"])
@@ -238,22 +239,24 @@ def run(dry: bool = False) -> dict | None:
             # historical fill. Any missed target change remains a hard failure.
             held_target = int(state["btc"] > 1e-12)
             missed_targets = signal_frame(closed).loc[missing[:-1], "target"]
-            if (missed_targets != held_target).any():
+            if (missed_targets != held_target).any() and not late_recovery:
                 changed = missed_targets[missed_targets != held_target].index[0]
                 raise RuntimeError(
                     "missed shadow trade at "
                     f"{changed}; refusing to invent a historical execution"
                 )
-            reconciled_bars = len(missing) - 1
-            state["last_bar"] = str(missing[-2])
-            state["last_target"] = held_target
-            state["runs"] = state.get("runs", 0) + reconciled_bars
-            print(
-                f"[shadow-4h] reconciled {reconciled_bars} missed HOLD bars "
-                f"through {missing[-2]}"
-            )
+            if not late_recovery:
+                reconciled_bars = len(missing) - 1
+                state["last_bar"] = str(missing[-2])
+                state["last_target"] = held_target
+                state["runs"] = state.get("runs", 0) + reconciled_bars
+                print(
+                    f"[shadow-4h] reconciled {reconciled_bars} missed HOLD bars "
+                    f"through {missing[-2]}"
+                )
     bar_status = require_new_bar(
-        state.get("last_bar"), sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS
+        state.get("last_bar"), sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS,
+        allow_late_recovery=late_recovery,
     )
     if bar_status == 0:
         print(f"[shadow-4h] already processed {sig['bar_time']}")
@@ -308,7 +311,10 @@ def run(dry: bool = False) -> dict | None:
         "action": action,
         "side": "LONG" if state["btc"] else "FLAT",
         "data_source": source,
-        "execution_source": f"{source}/ticker-in-current-kline",
+        "execution_source": f"{source}/" + (
+            "late-recovery-current-kline" if late_recovery and bar_status > 1
+            else "ticker-in-current-kline"
+        ),
         "theoretical_next_open_price": round(theoretical_open, 2),
         "fill_timestamp_utc": now.isoformat(),
         "fill_latency_minutes": round(fill_latency, 2),
@@ -337,6 +343,7 @@ def run(dry: bool = False) -> dict | None:
             (eq_after / state["peak_equity"] - 1) * 100, 2
         ),
         "gap_bars_processed": reconciled_bars + bar_status,
+        "late_recovery": bool(late_recovery and bar_status > 1),
     }
     report["summary"] = (
         f"{action} {'BTC' if sig['target'] else 'cash'}; "

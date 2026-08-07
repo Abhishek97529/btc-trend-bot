@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -123,8 +124,10 @@ def run(dry: bool = False) -> dict | None:
     closed, price, source, now = market_data()
     sig = signal(closed)
     state = load_json(STATE, default_state())
+    late_recovery = os.getenv("PAPER_LATE_RECOVERY") == "1"
     bar_status = require_new_bar(
-        state.get("last_bar"), sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS
+        state.get("last_bar"), sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS,
+        allow_late_recovery=late_recovery,
     )
     if bar_status == 0:
         print(f"[dual-4h] already processed {sig['bar_time']}")
@@ -166,7 +169,10 @@ def run(dry: bool = False) -> dict | None:
         "action": action,
         "side": "LONG" if state["btc"] else "FLAT",
         "data_source": source,
-        "execution_source": f"{source}/ticker-in-current-kline",
+        "execution_source": f"{source}/" + (
+            "late-recovery-current-kline" if late_recovery and bar_status > 1
+            else "ticker-in-current-kline"
+        ),
         "btc_price": round(price, 2),
         "closed_price": round(sig["closed_price"], 2),
         "target_exposure": sig["target"],
@@ -185,6 +191,7 @@ def run(dry: bool = False) -> dict | None:
         "total_return_pct": round((eq_after / state["initial_capital"] - 1) * 100, 2),
         "drawdown_pct": round((eq_after / state["peak_equity"] - 1) * 100, 2),
         "gap_bars_processed": bar_status,
+        "late_recovery": bool(late_recovery and bar_status > 1),
     }
     report["summary"] = (
         f"{action} {'BTC' if sig['target'] else 'cash'}; "
