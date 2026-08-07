@@ -1,4 +1,4 @@
-"""Write an auditable heartbeat after the complete 4H suite succeeds."""
+"""Write an auditable heartbeat after every complete 4H suite success."""
 from __future__ import annotations
 
 import os
