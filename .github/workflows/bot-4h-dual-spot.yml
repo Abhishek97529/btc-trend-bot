@@ -10,6 +10,7 @@ on:
       - "bot/paper_dual_4h_bot.py"
       - "bot/paper_shadow_4h_bot.py"
       - "bot/paper_4h_bot.py"
+      - "bot/write_scheduler_health.py"
       - "strategies/spot_4h_dual_trend/config.py"
       - "strategies/spot_4h_dual_trend_shadow/config.py"
       - "strategies/ma250_4h_long_flat/config.py"
@@ -59,6 +60,8 @@ jobs:
         env:
           FIXED_4H_VARIANT: long_short
         run: python bot/paper_4h_bot.py run
+      - name: Record complete-suite success
+        run: python bot/write_scheduler_health.py
       - name: Commit complete 4H paper suite state
         run: |
           git config user.name "github-actions[bot]"
@@ -68,7 +71,8 @@ jobs:
             strategies/spot_4h_dual_trend_shadow/runtime \
             strategies/ma250_4h_long_flat/runtime \
             strategies/ma250_4h_long_short/runtime; do
-            for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv"; do
+            for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv" \
+              "$PKG/scheduler_health.json"; do
               [ -f "$f" ] && git add "$f"
             done
           done
