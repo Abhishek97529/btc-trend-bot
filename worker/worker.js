@@ -10,6 +10,8 @@
 //   GITHUB_TOKEN        fine-grained PAT, read-only "Contents" on Abhishek97529/btc-trend-bot
 //   WEBHOOK_SECRET      any random string; must match setWebhook's secret_token
 
+import { DurableObject } from "cloudflare:workers";
+
 const OWNER = "Abhishek97529";
 const REPO = "btc-trend-bot";
 const THRESHOLD = 0.5;
@@ -65,11 +67,14 @@ const SUITE_HELP =
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (request.method === "GET" && url.pathname === "/market-data-health") {
-      return futuresRelayHealth();
-    }
-    if (request.method === "GET" && url.pathname.startsWith("/market-data/")) {
-      return relayFuturesMarketData(request, env, url);
+    if (request.method === "GET" &&
+        (url.pathname === "/market-data-health" ||
+         url.pathname.startsWith("/market-data/"))) {
+      const relay = env.MARKET_DATA_RELAY.getByName(
+        "btc-usdt-apac-v1",
+        { locationHint: "apac" },
+      );
+      return relay.fetch(request);
     }
     if (request.method !== "POST") return new Response("ok");
 
@@ -108,6 +113,24 @@ export default {
   },
 };
 
+export class MarketDataRelay extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/market-data-health") {
+      return futuresRelayHealth();
+    }
+    if (request.method === "GET" && url.pathname.startsWith("/market-data/")) {
+      return relayFuturesMarketData(request, this.env, url);
+    }
+    return new Response("not found", { status: 404 });
+  }
+}
+
 async function futuresRelayHealth() {
   try {
     const hosts = ["fapi", "fapi1", "fapi2", "fapi3", "fapi4"];
@@ -126,7 +149,7 @@ async function futuresRelayHealth() {
     const healthy = Object.values(statuses).some((status) => status === 200);
     return Response.json({
       relay: "ok",
-      market_data_backend: "bybit-linear-v2-public-bounded",
+      market_data_backend: "bybit-linear-v3-apac-durable-object",
       upstream_statuses: statuses,
     }, {
       status: healthy ? 200 : 502,

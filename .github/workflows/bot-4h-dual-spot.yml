@@ -50,7 +50,7 @@ jobs:
         run: |
           health="$(curl --fail --silent --show-error \
             https://btc-trend-bot.abhishektiwari328.workers.dev/market-data-health)"
-          echo "$health" | grep -q '"market_data_backend":"bybit-linear-v2-public-bounded"'
+          echo "$health" | grep -q '"market_data_backend":"bybit-linear-v3-apac-durable-object"'
       - name: Run MA250 long-flat paper strategy
         env:
           FIXED_4H_VARIANT: long_flat
