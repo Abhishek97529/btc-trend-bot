@@ -1,12 +1,12 @@
 {
-  "wallet": 9982.868871727942,
+  "wallet": 9981.28463119538,
   "qty": 0.30845562669709464,
   "entry_price": 64748.5,
   "initial_capital": 10000.0,
-  "peak_equity": 10116.945594963627,
-  "last_bar": "2026-08-09 08:00:00+00:00",
+  "peak_equity": 10127.122451497768,
+  "last_bar": "2026-08-09 12:00:00+00:00",
   "last_direction": 1,
-  "last_funding_time": "2026-08-09T13:13:21.688188+00:00",
-  "runs": 16,
+  "last_funding_time": "2026-08-09T16:52:33.399623+00:00",
+  "runs": 17,
   "liquidated": false
 }
