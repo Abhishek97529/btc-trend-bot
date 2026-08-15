@@ -1,17 +1,17 @@
 {
-  "timestamp_utc": "2026-08-14T03:03:04.129303+00:00",
-  "closed_bar_date": "2026-08-13",
-  "run_number": 23,
+  "timestamp_utc": "2026-08-15T01:53:57.870977+00:00",
+  "closed_bar_date": "2026-08-14",
+  "run_number": 24,
   "dry_run": false,
   "action": "HOLD",
   "side": "NONE",
-  "btc_price": 63425.6,
-  "closed_price": 63490.86,
+  "btc_price": 63023.65,
+  "closed_price": 63043.56,
   "signal_source": "binance",
   "execution_source": "https://data-api.binance.vision",
-  "agreement": "1/7 = 0.143",
+  "agreement": "0/7 = 0.000",
   "signals": {
-    "close > SMA(50)": "UP",
+    "close > SMA(50)": "down",
     "close > SMA(100)": "down",
     "close > SMA(200)": "down",
     "EMA(20) > EMA(50)": "down",
@@ -30,5 +30,5 @@
   "total_equity_usd": 10000.0,
   "total_return_pct": 0.0,
   "current_exposure_pct": 0.0,
-  "summary": "HOLD: 1/7 signals up \u2192 target 0%. no material change (dust/HOLD). Equity $10,000.00 \u2192 $10,000.00."
+  "summary": "HOLD: 0/7 signals up \u2192 target 0%. no material change (dust/HOLD). Equity $10,000.00 \u2192 $10,000.00."
 }
