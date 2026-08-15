@@ -1,17 +1,17 @@
 {
   "strategy": "fixed_2x_long_flat_4h",
   "variant": "long_flat",
-  "timestamp_utc": "2026-08-15T08:44:12.022528+00:00",
-  "closed_bar_time": "2026-08-15T04:00:00+00:00",
-  "run_number": 51,
+  "timestamp_utc": "2026-08-15T12:57:10.817068+00:00",
+  "closed_bar_time": "2026-08-15T08:00:00+00:00",
+  "run_number": 52,
   "dry_run": false,
   "action": "HOLD",
   "side": "FLAT",
   "data_source": "bybit_linear_perpetual_and_mark_via_cloudflare",
   "funding_source": "real_bybit",
-  "btc_price": 62985.0,
-  "closed_price": 63047.1,
-  "sma250": 64050.82,
+  "btc_price": 62955.4,
+  "closed_price": 62989.9,
+  "sma250": 64049.73,
   "target_exposure": 0.0,
   "actual_exposure": 0.0,
   "previous_exposure": 0.0,
@@ -30,5 +30,5 @@
   "liquidated": false,
   "gap_bars_processed": 1,
   "late_recovery": false,
-  "summary": "HOLD FLAT target +0.00x (actual +0.000x); BTC $62,985, SMA250 $64,051; equity $9,385.79."
+  "summary": "HOLD FLAT target +0.00x (actual +0.000x); BTC $62,955, SMA250 $64,050; equity $9,385.79."
 }
