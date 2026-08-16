@@ -1,9 +1,9 @@
 {
   "status": "success",
-  "timestamp_utc": "2026-08-16T04:49:04.476084+00:00",
+  "timestamp_utc": "2026-08-16T08:45:30.460766+00:00",
   "workflow": "paper-bot-4h-dual-spot",
-  "run_id": "31927500925",
+  "run_id": "31937239607",
   "run_attempt": "1",
-  "commit_sha": "2de38aa54454dcaf84087846982fb5036de0b4e9",
+  "commit_sha": "b0d94a248f1568ab90d216ca7da38b91e36ef244",
   "runner_region_path": "github_to_cloudflare_apac_durable_object"
 }
