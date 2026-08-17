@@ -4,9 +4,9 @@
   "entry_price": 64074.9,
   "initial_capital": 10000.0,
   "peak_equity": 10127.122451497768,
-  "last_bar": "2026-08-17 12:00:00+00:00",
+  "last_bar": "2026-08-17 16:00:00+00:00",
   "last_direction": 1,
-  "last_funding_time": "2026-08-17T16:44:07.861669+00:00",
-  "runs": 65,
+  "last_funding_time": "2026-08-17T20:41:50.340482+00:00",
+  "runs": 66,
   "liquidated": false
 }
