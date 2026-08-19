@@ -3,10 +3,10 @@
   "qty": 0.2895752140937779,
   "entry_price": 64074.9,
   "initial_capital": 10000.0,
-  "peak_equity": 10571.967413156317,
-  "last_bar": "2026-08-19 12:00:00+00:00",
+  "peak_equity": 10602.083235422071,
+  "last_bar": "2026-08-19 16:00:00+00:00",
   "last_direction": 1,
-  "last_funding_time": "2026-08-19T16:44:54.772403+00:00",
-  "runs": 77,
+  "last_funding_time": "2026-08-19T20:43:58.437628+00:00",
+  "runs": 78,
   "liquidated": false
 }
