@@ -1,0 +1,2 @@
+timestamp_utc,closed_bar_date,run_number,action,side,btc_price,agreement,previous_exposure_pct,new_target_exposure_pct,btc_units_traded,trade_value_usd,cost_usd,total_equity_usd,total_return_pct
+2026-08-20T01:55:30.404346+00:00,2026-08-19,29,ENTER,BUY,69700.0,4/7 = 0.571,0.0,57.14,0.081914,5709.39,8.56,9991.44,-0.09
