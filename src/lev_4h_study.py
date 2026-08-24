@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from strategies import momentum
+from legacy_strategies import momentum
 from strategies_v2 import trend_ensemble, _trend_votes
 from indicators import rolling_vol
 import metrics as M

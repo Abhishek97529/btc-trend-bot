@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metrics as M
 from corrected_ma_regime_2x import BPY, load, regime, simulate, stats
 from indicators import sma
-from strategies import ema_crossover, momentum, donchian_breakout, rsi_mean_reversion
+from legacy_strategies import ema_crossover, momentum, donchian_breakout, rsi_mean_reversion
 
 
 def ma_hysteresis(df, ma=250, entry_buffer=0.02, exit_buffer=0.02):

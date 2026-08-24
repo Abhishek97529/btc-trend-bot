@@ -19,7 +19,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_fetch import fetch_klines
 from strategies_v2 import trend_ensemble, _trend_votes
-from strategies import buy_and_hold
+from legacy_strategies import buy_and_hold
 from backtest import run_backtest
 import metrics as M
 from indicators import ema, sma, donchian

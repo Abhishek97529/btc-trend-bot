@@ -17,7 +17,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_fetch import fetch_klines
 from strategies_v2 import STRATEGIES_LONG, STRATEGIES_LS
-from strategies import buy_and_hold
+from legacy_strategies import buy_and_hold
 from backtest import run_backtest
 import metrics as M
 

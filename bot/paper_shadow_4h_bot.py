@@ -231,7 +231,10 @@ def run(dry: bool = False) -> dict | None:
     state = load_json(STATE, default_state())
     late_recovery = os.getenv("PAPER_LATE_RECOVERY") == "1"
     reconciled_bars = 0
-    if state.get("last_bar") is not None:
+    # Reconciliation needs candle history. Unit-test and injected data sources may
+    # supply only the already-computed signal; require_new_bar still enforces
+    # duplicate and gap safety in that case.
+    if state.get("last_bar") is not None and not closed.empty:
         previous = pd.Timestamp(state["last_bar"])
         missing = closed.index[closed.index > previous]
         if len(missing) > 1:
