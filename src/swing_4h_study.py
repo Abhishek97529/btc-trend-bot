@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from strategies import ema_crossover, donchian_breakout, rsi_mean_reversion, momentum, trend_vol_target
+from legacy_strategies import ema_crossover, donchian_breakout, rsi_mean_reversion, momentum, trend_vol_target
 from strategies_v2 import trend_ensemble, vol_target_trend, ma_regime
 from backtest import run_backtest
 import metrics as M

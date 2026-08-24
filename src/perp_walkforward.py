@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from strategies import momentum, ema_crossover, donchian_breakout
+from legacy_strategies import momentum, ema_crossover, donchian_breakout
 from strategies_v2 import trend_ensemble, ma_regime
 import metrics as M
 

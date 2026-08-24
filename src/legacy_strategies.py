@@ -1,5 +1,5 @@
 """
-Candidate strategies.
+Legacy research candidate strategies.
 
 Each strategy is a function (df, **params) -> pd.Series of TARGET POSITIONS in [0, 1]
 aligned to df.index, where the value at bar t is the position we WANT to hold based on
