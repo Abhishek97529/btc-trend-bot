@@ -62,3 +62,36 @@ def require_new_bar(last_bar: str | None, new_bar, timeframe: pd.Timedelta,
             f"gap={bars} bars (allowed {max_gap_bars})"
         )
     return bars
+
+
+def reconcile_missed_holds(
+    last_bar: str | None,
+    new_bar,
+    targets: pd.Series,
+    held_target,
+    strategy_label: str,
+) -> tuple[int, pd.Timestamp | None]:
+    """Identify missed bars that can be fast-forwarded without inventing a fill.
+
+    The current/new bar is deliberately excluded from reconciliation because the
+    runner can execute its signal at the current observable price. Every earlier
+    missed bar must match the position already held; otherwise a historical trade
+    was missed and recovery remains fail-closed.
+    """
+    if last_bar is None:
+        return 0, None
+    previous = pd.Timestamp(last_bar)
+    current = pd.Timestamp(new_bar)
+    candidates = targets.loc[(targets.index > previous) & (targets.index <= current)]
+    if len(candidates) <= 1:
+        return 0, None
+    missed = candidates.iloc[:-1]
+    if missed.isna().any():
+        raise RuntimeError(f"missing {strategy_label} signal during gap")
+    changed = missed[missed != held_target]
+    if not changed.empty:
+        raise RuntimeError(
+            f"missed {strategy_label} trade at {changed.index[0]}; "
+            "refusing to invent a historical execution"
+        )
+    return len(missed), pd.Timestamp(missed.index[-1])

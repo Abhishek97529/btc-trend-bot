@@ -21,6 +21,7 @@ from bot.runtime import (  # noqa: E402
     append_csv_dedup,
     atomic_write_json,
     load_json,
+    reconcile_missed_holds,
     require_new_bar,
 )
 from strategies.spot_4h_dual_trend import config as C  # noqa: E402
@@ -92,27 +93,44 @@ def market_data():
     return closed, float(current["close"].iloc[-1]), source, now
 
 
-def signal(closed: pd.DataFrame) -> dict:
+def signal_frame(closed: pd.DataFrame) -> pd.DataFrame:
     close = closed["close"]
     ema_fast = close.ewm(span=C.EMA_FAST, adjust=False).mean()
     ema_slow = close.ewm(span=C.EMA_SLOW, adjust=False).mean()
     momentum = close.pct_change(C.MOMENTUM_LOOKBACK)
     average = close.rolling(C.TREND_SMA).mean()
+    out = pd.DataFrame(index=closed.index)
+    out["ema_fast"] = ema_fast
+    out["ema_slow"] = ema_slow
+    out["momentum"] = momentum
+    out["trend_sma"] = average
+    out["ema_trend"] = ema_fast > ema_slow
+    out["momentum_positive"] = momentum > 0
+    out["sma_regime"] = close > average
+    out["target"] = (
+        out["ema_trend"] & out["momentum_positive"] & out["sma_regime"]
+    ).astype("int8")
+    return out
+
+
+def signal(closed: pd.DataFrame) -> dict:
+    close = closed["close"]
+    indicators = signal_frame(closed)
+    latest = indicators.iloc[-1]
     conditions = {
-        "ema_trend": bool(ema_fast.iloc[-1] > ema_slow.iloc[-1]),
-        "momentum": bool(momentum.iloc[-1] > 0),
-        "sma_regime": bool(close.iloc[-1] > average.iloc[-1]),
+        "ema_trend": bool(latest["ema_trend"]),
+        "momentum": bool(latest["momentum_positive"]),
+        "sma_regime": bool(latest["sma_regime"]),
     }
-    target = int(all(conditions.values()))
     return {
         "bar_time": closed.index[-1],
         "closed_price": float(close.iloc[-1]),
-        "ema_fast": float(ema_fast.iloc[-1]),
-        "ema_slow": float(ema_slow.iloc[-1]),
-        "momentum": float(momentum.iloc[-1]),
-        "sma": float(average.iloc[-1]),
+        "ema_fast": float(latest["ema_fast"]),
+        "ema_slow": float(latest["ema_slow"]),
+        "momentum": float(latest["momentum"]),
+        "sma": float(latest["trend_sma"]),
         "conditions": conditions,
-        "target": target,
+        "target": int(latest["target"]),
     }
 
 
@@ -125,8 +143,20 @@ def run(dry: bool = False) -> dict | None:
     sig = signal(closed)
     state = load_json(STATE, default_state())
     late_recovery = os.getenv("PAPER_LATE_RECOVERY") == "1"
+    old_target = int(state["btc"] > 1e-12)
+    reconciled_bars, reconciled_through = reconcile_missed_holds(
+        state.get("last_bar"),
+        sig["bar_time"],
+        signal_frame(closed)["target"],
+        old_target,
+        "dual-trend",
+    )
+    effective_last_bar = (
+        str(reconciled_through) if reconciled_through is not None
+        else state.get("last_bar")
+    )
     bar_status = require_new_bar(
-        state.get("last_bar"), sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS,
+        effective_last_bar, sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS,
         allow_late_recovery=late_recovery,
     )
     if bar_status == 0:
@@ -135,7 +165,6 @@ def run(dry: bool = False) -> dict | None:
 
     before = dict(state)
     eq_before = equity(state, price)
-    old_target = int(state["btc"] > 1e-12)
     trade = sig["target"] != old_target
     rate = C.FEE + C.SLIPPAGE
     traded_units = 0.0
@@ -156,7 +185,7 @@ def run(dry: bool = False) -> dict | None:
     state["peak_equity"] = max(state.get("peak_equity", C.INITIAL_CAPITAL), eq_after)
     state["last_bar"] = str(sig["bar_time"])
     state["last_target"] = sig["target"]
-    state["runs"] = state.get("runs", 0) + 1
+    state["runs"] = state.get("runs", 0) + reconciled_bars + 1
     action = "ENTER" if traded_units > 0 else ("EXIT" if traded_units < 0 else "HOLD")
     report = {
         "strategy": "spot_4h_dual_trend",
@@ -190,7 +219,7 @@ def run(dry: bool = False) -> dict | None:
         "total_equity_usd": round(eq_after, 2),
         "total_return_pct": round((eq_after / state["initial_capital"] - 1) * 100, 2),
         "drawdown_pct": round((eq_after / state["peak_equity"] - 1) * 100, 2),
-        "gap_bars_processed": bar_status,
+        "gap_bars_processed": reconciled_bars + bar_status,
         "late_recovery": bool(late_recovery and bar_status > 1),
     }
     report["summary"] = (

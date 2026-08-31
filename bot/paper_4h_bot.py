@@ -24,6 +24,7 @@ from bot.runtime import (  # noqa: E402
     append_csv_dedup,
     atomic_write_json,
     load_json,
+    reconcile_missed_holds,
     require_new_bar,
 )
 
@@ -158,10 +159,20 @@ def funding_events(start_time: str | None, end_time: pd.Timestamp) -> list[dict]
     ]
 
 
+def direction_series(closed: pd.DataFrame) -> pd.Series:
+    close = closed["close"]
+    average = close.rolling(C.MA_BARS).mean()
+    return pd.Series(
+        np.where(close > average, 1, -1 if C.SHORT_EXPOSURE else 0),
+        index=closed.index,
+        dtype="int8",
+    )
+
+
 def signal(closed: pd.DataFrame) -> dict:
     close = closed["close"]
     average = float(close.rolling(C.MA_BARS).mean().iloc[-1])
-    direction = 1 if close.iloc[-1] > average else (-1 if C.SHORT_EXPOSURE else 0)
+    direction = int(direction_series(closed).iloc[-1])
     target = C.LONG_EXPOSURE if direction > 0 else (
         -C.SHORT_EXPOSURE if direction < 0 else 0.0
     )
@@ -243,8 +254,20 @@ def run(dry: bool = False) -> dict | None:
         raise RuntimeError("paper account is liquidated; archive and reset it explicitly")
 
     late_recovery = os.getenv("PAPER_LATE_RECOVERY") == "1"
+    held_direction = int(np.sign(state["qty"]))
+    reconciled_bars, reconciled_through = reconcile_missed_holds(
+        state.get("last_bar"),
+        sig["bar_time"],
+        direction_series(closed),
+        held_direction,
+        f"MA250 {VARIANT}",
+    )
+    effective_last_bar = (
+        str(reconciled_through) if reconciled_through is not None
+        else state.get("last_bar")
+    )
     bar_status = require_new_bar(
-        state.get("last_bar"), sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS,
+        effective_last_bar, sig["bar_time"], TIMEFRAME, C.MAX_GAP_BARS,
         allow_late_recovery=late_recovery,
     )
     if bar_status == 0:
@@ -278,7 +301,7 @@ def run(dry: bool = False) -> dict | None:
     state["last_bar"] = str(sig["bar_time"])
     state["last_direction"] = sig["direction"]
     state["last_funding_time"] = now.isoformat()
-    state["runs"] = state.get("runs", 0) + 1
+    state["runs"] = state.get("runs", 0) + reconciled_bars + 1
 
     action = (
         "LIQUIDATED" if liquidated else
@@ -323,7 +346,7 @@ def run(dry: bool = False) -> dict | None:
         "total_return_pct": round((eq_after / state["initial_capital"] - 1) * 100, 2),
         "drawdown_pct": round((eq_after / state["peak_equity"] - 1) * 100, 2),
         "liquidated": state.get("liquidated", False),
-        "gap_bars_processed": bar_status,
+        "gap_bars_processed": reconciled_bars + bar_status,
         "late_recovery": bool(late_recovery and bar_status > 1),
     }
     report["summary"] = (
