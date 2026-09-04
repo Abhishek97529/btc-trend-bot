@@ -29,16 +29,23 @@ from bot.runtime import (  # noqa: E402
 )
 
 VARIANT = os.getenv("FIXED_4H_VARIANT", "").strip().lower()
+VARIANT_PACKAGES = {
+    "long_flat": "ma250_4h_long_flat",
+    "long_short": "ma250_4h_long_short",
+    "voltarget": "ma250_4h_voltarget",
+}
+if VARIANT not in VARIANT_PACKAGES:
+    raise RuntimeError(
+        "FIXED_4H_VARIANT must be one of: " + ", ".join(sorted(VARIANT_PACKAGES))
+    )
 if VARIANT == "long_flat":
     from strategies.ma250_4h_long_flat import config as C
 elif VARIANT == "long_short":
     from strategies.ma250_4h_long_short import config as C
 else:
-    raise RuntimeError("FIXED_4H_VARIANT must be 'long_flat' or 'long_short'")
+    from strategies.ma250_4h_voltarget import config as C
 
-PACKAGE = ROOT / "strategies" / (
-    "ma250_4h_long_flat" if VARIANT == "long_flat" else "ma250_4h_long_short"
-)
+PACKAGE = ROOT / "strategies" / VARIANT_PACKAGES[VARIANT]
 RUNTIME = PACKAGE / "runtime"
 STATE = RUNTIME / "state.json"
 STATUS = RUNTIME / "status.json"
@@ -169,6 +176,25 @@ def direction_series(closed: pd.DataFrame) -> pd.Series:
     )
 
 
+def volatility_scale(closed: pd.DataFrame) -> float | None:
+    """Scale exposure toward a constant risk budget, or None when disabled.
+
+    Constant leverage adds drawdown without adding Sharpe. Sizing by
+    target_vol / realised_vol holds risk roughly constant instead, and the
+    rebalance band keeps the resulting turnover close to the fixed-size rule.
+    """
+    target_vol = getattr(C, "VOL_TARGET", None)
+    if not target_vol:
+        return None
+    lookback = getattr(C, "VOL_LOOKBACK", 30)
+    bars_per_year = getattr(C, "BARS_PER_YEAR", 6 * 365)
+    realised = closed["close"].pct_change().rolling(lookback).std().iloc[-1]
+    if not np.isfinite(realised) or realised <= 0:
+        raise RuntimeError("realised volatility unavailable; refusing to size blind")
+    annualised = float(realised) * np.sqrt(bars_per_year)
+    return min(target_vol / annualised, getattr(C, "MAX_LEVERAGE", 1.5))
+
+
 def signal(closed: pd.DataFrame) -> dict:
     close = closed["close"]
     average = float(close.rolling(C.MA_BARS).mean().iloc[-1])
@@ -176,12 +202,16 @@ def signal(closed: pd.DataFrame) -> dict:
     target = C.LONG_EXPOSURE if direction > 0 else (
         -C.SHORT_EXPOSURE if direction < 0 else 0.0
     )
+    scale = volatility_scale(closed)
+    if scale is not None and direction != 0:
+        target = float(np.sign(target) * scale) if target else 0.0
     return {
         "bar_time": closed.index[-1],
         "close": float(close.iloc[-1]),
         "sma250": average,
         "direction": direction,
         "target_exposure": target,
+        "vol_scale": scale,
     }
 
 
@@ -224,6 +254,21 @@ def apply_funding_and_liquidation(
             state.update(wallet=0.0, qty=0.0, entry_price=0.0, liquidated=True)
             return total_payment, applied, True
     return total_payment, applied, False
+
+
+def exposure_drifted(target: float, eq_before: float, price: float,
+                     old_qty: float) -> bool:
+    """Report whether held exposure has drifted outside the tolerance band.
+
+    Fixed contract quantity makes realised leverage drift as equity moves: it
+    decays when the trade wins and rises when it loses. Both directions are
+    unintended, so the position is resized once the gap exceeds the band.
+    """
+    band = getattr(C, "REBALANCE_BAND", 0.0)
+    if band <= 0 or target == 0 or eq_before <= 0:
+        return False
+    actual = old_qty * price / eq_before
+    return abs(actual - target) > band * abs(target)
 
 
 def cost_aware_target_qty(target: float, eq_before: float, price: float,
@@ -284,14 +329,16 @@ def run(dry: bool = False) -> dict | None:
     old_direction = int(np.sign(old_qty))
     direction_change = sig["direction"] != old_direction
     eq_before = max(equity(state, price), 0.0)
+    drifted = exposure_drifted(sig["target_exposure"], eq_before, price, old_qty)
+    should_trade = (direction_change or drifted) and not liquidated
     target_qty = (
         cost_aware_target_qty(sig["target_exposure"], eq_before, price, old_qty)
-        if direction_change and not liquidated else old_qty
+        if should_trade else old_qty
     )
     changed_qty = target_qty - old_qty
     notional = abs(changed_qty) * price
-    cost = notional * (C.FEE + C.SLIPPAGE) if direction_change and not liquidated else 0.0
-    if direction_change and not liquidated:
+    cost = notional * (C.FEE + C.SLIPPAGE) if should_trade else 0.0
+    if should_trade:
         state["wallet"] = eq_before - cost
         state["qty"] = target_qty
         state["entry_price"] = price if target_qty else 0.0
@@ -308,6 +355,7 @@ def run(dry: bool = False) -> dict | None:
         "EXIT" if direction_change and sig["direction"] == 0 else
         "REVERSE" if direction_change and old_qty != 0 else
         "ENTER" if direction_change else
+        "REBALANCE" if should_trade else
         "HOLD"
     )
     actual_exposure = state["qty"] * price / eq_after if eq_after else 0.0

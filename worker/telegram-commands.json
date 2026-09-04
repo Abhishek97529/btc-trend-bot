@@ -1,6 +1,6 @@
 {
   "commands": [
-    {"command": "all", "description": "Status of all five paper strategies"},
+    {"command": "all", "description": "Status of all six paper strategies"},
     {"command": "daily", "description": "Daily spot ensemble portfolio"},
     {"command": "daily_signal", "description": "Daily ensemble trend votes"},
     {"command": "daily_stats", "description": "Daily ensemble performance"},
@@ -13,6 +13,8 @@
     {"command": "maflat_trades", "description": "Recent MA250 long-flat trades"},
     {"command": "mashort", "description": "MA250 2x long or 0.5x short"},
     {"command": "mashort_trades", "description": "Recent MA250 long-short trades"},
+    {"command": "mavol", "description": "MA250 vol-targeted 1.5x cap portfolio"},
+    {"command": "mavol_trades", "description": "Recent MA250 vol-targeted trades"},
     {"command": "health", "description": "Scheduler health for all strategies"},
     {"command": "price", "description": "Current BTC price"},
     {"command": "help", "description": "Show command guide"}

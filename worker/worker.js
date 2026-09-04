@@ -20,6 +20,7 @@ const FOUR_HOUR_PACKAGES = Object.freeze({
   shadow: "spot_4h_dual_trend_shadow",
   long_flat: "ma250_4h_long_flat",
   long_short: "ma250_4h_long_short",
+  voltarget: "ma250_4h_voltarget",
 });
 
 const HELP =
@@ -43,8 +44,8 @@ const HELP_4H =
   "/4hhealth - scheduler health";
 
 const SUITE_HELP =
-  "\u{1F916} BTC five-strategy paper suite\n\n" +
-  "/all - compact status for all five strategies\n\n" +
+  "\u{1F916} BTC six-strategy paper suite\n\n" +
+  "/all - compact status for all six strategies\n\n" +
   "Daily spot ensemble\n" +
   "/daily - portfolio and current target\n" +
   "/daily_signal - seven trend votes\n" +
@@ -58,7 +59,9 @@ const SUITE_HELP =
   "/maflat - MA250 2x/flat portfolio\n" +
   "/maflat_trades - recent 2x/flat trades\n" +
   "/mashort - MA250 2x/-0.5x portfolio\n" +
-  "/mashort_trades - recent long/short trades\n\n" +
+  "/mashort_trades - recent long/short trades\n" +
+  "/mavol - MA250 vol-targeted 1.5x cap portfolio\n" +
+  "/mavol_trades - recent vol-targeted trades\n\n" +
   "/health - scheduler health\n" +
   "/price - current BTC price\n" +
   "/live - disabled; paper only\n" +
@@ -299,10 +302,12 @@ async function route(cmd, env) {
   if (cmd === "health" || cmd === "4hhealth") return replySuiteHealth(env);
   if (cmd === "maflat" || cmd === "4hflat") return reply4hPortfolio(await load4hStatus("long_flat", env));
   if (cmd === "mashort" || cmd === "4hls") return reply4hPortfolio(await load4hStatus("long_short", env));
+  if (cmd === "mavol" || cmd === "4hvol") return reply4hPortfolio(await load4hStatus("voltarget", env));
   if (cmd === "dual4h" || cmd === "4hdual") return replyDualPortfolio(await load4hStatus("dual", env), "Spot 4h dual trend");
   if (cmd === "shadow4h" || cmd === "4hshadow") return replyDualPortfolio(await load4hStatus("shadow", env), "Spot 4h shadow challenger");
   if (cmd === "maflat_trades" || cmd === "4hflattrades") return reply4hTrades("long_flat", env);
   if (cmd === "mashort_trades" || cmd === "4hlstrades") return reply4hTrades("long_short", env);
+  if (cmd === "mavol_trades" || cmd === "4hvoltrades") return reply4hTrades("voltarget", env);
   if (cmd === "dual4h_trades") return reply4hTrades("dual", env);
   if (cmd === "shadow4h_trades") return reply4hTrades("shadow", env);
   if (cmd === "help" || cmd === "start") return SUITE_HELP;
@@ -311,7 +316,7 @@ async function route(cmd, env) {
 
 // The Telegram surface is deliberately read-only; there is no arming path.
 function handleLive() {
-  return "\u{1F6D1} Live trading is disabled. All five strategies are paper-only.";
+  return "\u{1F6D1} Live trading is disabled. All six strategies are paper-only.";
 }
 
 function packageFor4h(variant) {
@@ -321,34 +326,37 @@ function packageFor4h(variant) {
 }
 
 async function replyAll(env) {
-  const [daily, dual, shadow, flat, short] = await Promise.all([
+  const [daily, dual, shadow, flat, short, voltarget] = await Promise.all([
     loadStatus(env),
     load4hStatus("dual", env),
     load4hStatus("shadow", env),
     load4hStatus("long_flat", env),
     load4hStatus("long_short", env),
+    load4hStatus("voltarget", env),
   ]);
   const row = (name, r, exposure) => r
     ? `${name}: $${fmt(r.total_equity_usd)} (${sign(r.total_return_pct)}%) | ${exposure(r)}`
     : `${name}: no snapshot`;
   return [
-    "\u{1F4CA} FIVE-STRATEGY PAPER SUITE",
+    "\u{1F4CA} SIX-STRATEGY PAPER SUITE",
     row("Daily spot", daily, (r) => `${Number(r.current_exposure_pct).toFixed(0)}%`),
     row("Dual 4h spot", dual, (r) => `${sign(r.actual_exposure)}x`),
     row("Shadow 4h spot", shadow, (r) => `${sign(r.actual_exposure)}x`),
     row("MA250 flat", flat, (r) => `${sign(r.actual_exposure ?? r.target_exposure)}x`),
     row("MA250 short", short, (r) => `${sign(r.actual_exposure ?? r.target_exposure)}x`),
+    row("MA250 voltgt", voltarget, (r) => `${sign(r.actual_exposure ?? r.target_exposure)}x`),
     "PAPER ONLY",
   ].join("\n");
 }
 
 async function replySuiteHealth(env) {
-  const [daily, dual, shadow, flat, short] = await Promise.all([
+  const [daily, dual, shadow, flat, short, voltarget] = await Promise.all([
     loadStatus(env),
     load4hStatus("dual", env),
     load4hStatus("shadow", env),
     load4hStatus("long_flat", env),
     load4hStatus("long_short", env),
+    load4hStatus("voltarget", env),
   ]);
   const age = (r) => r
     ? (Date.now() - new Date(r.timestamp_utc).getTime()) / 3.6e6
@@ -365,6 +373,7 @@ async function replySuiteHealth(env) {
     line("Shadow 4h spot", shadow, 6),
     line("MA250 flat", flat, 6),
     line("MA250 short", short, 6),
+    line("MA250 voltgt", voltarget, 6),
   ].join("\n");
 }
 

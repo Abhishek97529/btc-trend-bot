@@ -1,6 +1,6 @@
 # Telegram status bot
 
-The Cloudflare Worker is a read-only interface to the five paper accounts. It
+The Cloudflare Worker is a read-only interface to the six paper accounts. It
 reads committed runtime snapshots from GitHub and never submits orders.
 
 | Group | Commands |
@@ -11,6 +11,7 @@ reads committed runtime snapshots from GitHub and never submits orders.
 | Dual-trend shadow | `/shadow4h`, `/shadow4h_trades` |
 | MA250 long/flat | `/maflat`, `/maflat_trades` |
 | MA250 long/short | `/mashort`, `/mashort_trades` |
+| MA250 vol-targeted | `/mavol`, `/mavol_trades` |
 
 Older commands remain aliases so existing bookmarks continue working. `/live`
 only reports that live trading is disabled.

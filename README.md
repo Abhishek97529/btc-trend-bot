@@ -1,9 +1,12 @@
 # BTC systematic-strategy suite
 
 This repository contains five frozen BTC strategies, their independent paper
-accounts, shared execution code, and reproducible research. All five are
+accounts, shared execution code, and reproducible research. All are
 paper-only. Historical performance is evidence for further testing, not a
-promise of future profit.
+promise of future profit. A sixth paper-only account,
+`ma250_4h_voltarget`, was added on 2026-09-04 as a risk challenger to the two
+leveraged accounts; see
+[the improvement study](docs/audits/STRATEGY_IMPROVEMENTS.md).
 
 | Strategy | Market | Audited return | CAGR | Sharpe | Max DD | Orders |
 |---|---|---:|---:|---:|---:|---:|
@@ -43,7 +46,8 @@ python bot/paper_shadow_4h_bot.py status
 python bot/paper_shadow_4h_bot.py run --dry-run
 ```
 
-For the MA250 runner, set `FIXED_4H_VARIANT` to `long_flat` or `long_short`.
+For the MA250 runner, set `FIXED_4H_VARIANT` to `long_flat`, `long_short`, or
+`voltarget`.
 
 ## Telegram
 

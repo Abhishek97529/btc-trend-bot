@@ -15,6 +15,7 @@ on:
       - "strategies/spot_4h_dual_trend_shadow/config.py"
       - "strategies/ma250_4h_long_flat/config.py"
       - "strategies/ma250_4h_long_short/config.py"
+      - "strategies/ma250_4h_voltarget/config.py"
       - "worker/worker.js"
       - ".github/workflows/bot-4h-dual-spot.yml"
 
@@ -64,6 +65,10 @@ jobs:
         env:
           FIXED_4H_VARIANT: long_short
         run: python bot/paper_4h_bot.py run
+      - name: Run MA250 volatility-targeted challenger
+        env:
+          FIXED_4H_VARIANT: voltarget
+        run: python bot/paper_4h_bot.py run
       - name: Record complete-suite success
         run: python bot/write_scheduler_health.py
       - name: Commit complete 4H paper suite state
@@ -74,7 +79,8 @@ jobs:
             strategies/spot_4h_dual_trend/runtime \
             strategies/spot_4h_dual_trend_shadow/runtime \
             strategies/ma250_4h_long_flat/runtime \
-            strategies/ma250_4h_long_short/runtime; do
+            strategies/ma250_4h_long_short/runtime \
+            strategies/ma250_4h_voltarget/runtime; do
             for f in "$PKG/state.json" "$PKG/status.json" "$PKG/trades.csv" \
               "$PKG/scheduler_health.json"; do
               [ -f "$f" ] && git add "$f"

@@ -4,6 +4,9 @@ Paper-only BTCUSDT perpetual candidate.
 
 - Completed close above SMA(250): target +2.0x.
 - Otherwise: flat.
+- Rebalances back to target once realised exposure drifts more than 10% away
+  from it (`REBALANCE_BAND`). Fixed contract quantity otherwise lets leverage
+  decay on winning trends and rise on losing ones.
 - Uses perpetual candles, mark-price extremes, and real funding only.
 - Prospective paper execution uses Bybit BTCUSDT linear-perpetual data through
   the authenticated Cloudflare relay because Binance blocks hosted CI traffic.
